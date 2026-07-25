@@ -1,8 +1,10 @@
 import { createEditorState } from "./editor-state.mjs";
+import { createOsmRasterStyle } from "./map-style.mjs";
 
 const config = window.KOPRIK_CONFIG ?? {
   apiBase: "/api",
-  mapStyleUrl: "https://demotiles.maplibre.org/style.json",
+  osmTileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  mapAttribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
   center: [67.27, 37.94],
   zoom: 8,
 };
@@ -247,13 +249,20 @@ async function initializeMap() {
   }
   map = new window.maplibregl.Map({
     container: "map",
-    style: config.mapStyleUrl,
+    style: createOsmRasterStyle({
+      tileUrl: config.osmTileUrl,
+      attribution: config.mapAttribution,
+    }),
     center: config.center,
     zoom: config.zoom,
     attributionControl: false,
     maplibreLogo: false,
     maxPitch: 0,
   });
+  map.addControl(
+    new window.maplibregl.AttributionControl({ compact: false }),
+    "bottom-right",
+  );
   map.on("load", () => {
     mapReady = true;
     setupMapLayers();
