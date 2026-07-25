@@ -1,0 +1,2 @@
+-- Ishlab chiqarishda parol hashini ilova orqali yarating va quyidagi qiymatni almashtiring.
+-- Ushbu seed avtomatik ishga tushmaydi; xavfsiz administrator yaratish jarayoni keyingi PostGIS ulanish bosqichida qo‘shiladi.
