@@ -1,4 +1,7 @@
-# Ko‘prik Xarita — BUILD 0001
+[README.md](https://github.com/user-attachments/files/30370427/README.md)
+# Ko‘prik Xarita
+
+**Joriy versiya: BUILD 0002** — OpenStreetMap fon xaritasi ulangan. — BUILD 0001
 
 Surxondaryo viloyati uchun alohida, tahrirlanadigan xarita xizmatining birinchi ishlaydigan prototipi.
 
