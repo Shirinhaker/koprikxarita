@@ -1,10 +1,8 @@
-# BUILD 0001
+[BUILD.md](https://github.com/user-attachments/files/30370433/BUILD.md)
+# BUILD 0002 — OpenStreetMap fon xaritasi
 
-- Alohida Ko‘prik Xarita loyihasi yaratildi.
-- Xarita tahrirlash interfeysi qo‘shildi.
-- Yo‘l chizish va nuqtalarni surish qo‘shildi.
-- Draft, published va archived holatlari qo‘shildi.
-- Login va admin ruxsatlari qo‘shildi.
-- JSON saqlash va o‘zgarishlar jurnali qo‘shildi.
-- PostGIS migratsiyasi tayyorlandi.
-- 15 ta avtomatik test va API smoke testi tayyorlandi.
+- MapLibre demo uslubi haqiqiy OpenStreetMap raster plitkalari bilan almashtirildi.
+- Surxondaryodagi ko‘chalar, binolar va joy nomlari fon xaritada ko‘rinadi.
+- Chizilgan Ko‘prik yo‘llari OSM qatlamining ustida saqlanadi.
+- OpenStreetMap attribution xaritaning pastki o‘ng qismida ko‘rinadi.
+- Frontend keshini yangilash uchun BUILD 0002 versiya parametri qo‘shildi.
