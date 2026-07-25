@@ -132,7 +132,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .map-top-tools { position: absolute; z-index: 4; top: 14px; right: 14px; display: grid; gap: 8px; }
 .map-fab { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgba(211,217,226,.9); border-radius: 11px; background: rgba(255,255,255,.96); color: var(--text); box-shadow: var(--shadow-soft); }
 .map-fab svg { width: 20px; }
-.attribution-button { position: absolute; z-index: 4; right: 11px; bottom: 9px; border: 1px solid rgba(211,217,226,.85); border-radius: 7px; background: rgba(255,255,255,.91); color: #5e687b; padding: 5px 8px; font-size: 9px; backdrop-filter: blur(8px); }
+.attribution-button { position: absolute; z-index: 4; right: 11px; bottom: 36px; border: 1px solid rgba(211,217,226,.85); border-radius: 7px; background: rgba(255,255,255,.91); color: #5e687b; padding: 5px 8px; font-size: 9px; backdrop-filter: blur(8px); }
 .map-instruction { position: absolute; z-index: 4; left: 50%; top: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 9px 13px; border-radius: 10px; background: #172033; color: white; box-shadow: var(--shadow); font-size: 11px; }
 .map-instruction strong { font-size: 11px; }
 .map-instruction span { color: #cbd2df; }
@@ -141,6 +141,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .vertex-marker:active { cursor: grabbing; }
 .maplibregl-canvas { outline: none; }
 .maplibregl-ctrl-logo { display: none !important; }
+.maplibregl-ctrl-attrib { margin: 0 6px 6px 0 !important; border-radius: 6px; background: rgba(255,255,255,.92) !important; font-size: 9px !important; color: #5e687b; box-shadow: 0 1px 4px rgba(20,32,55,.12); }
+.maplibregl-ctrl-attrib a { color: #44506a; }
 
 .modal { border: 0; padding: 0; background: transparent; max-width: min(92vw, 430px); color: var(--text); }
 .modal::backdrop { background: rgba(18,27,45,.46); backdrop-filter: blur(5px); }
