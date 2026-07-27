@@ -1,7 +1,7 @@
-[README.md](https://github.com/user-attachments/files/30370427/README.md)
+[README.md](https://github.com/user-attachments/files/30433923/README.md)
 # Ko‘prik Xarita
 
-**Joriy versiya: BUILD 0002** — OpenStreetMap fon xaritasi ulangan. — BUILD 0001
+**Joriy versiya: BUILD 0003** — ichki ko‘chalar asosiy yo‘lga o‘xshash oq-kulrang uslubda chiziladi va avval chizilgan yo‘llarga yopishadi.
 
 Surxondaryo viloyati uchun alohida, tahrirlanadigan xarita xizmatining birinchi ishlaydigan prototipi.
 
@@ -10,7 +10,8 @@ Surxondaryo viloyati uchun alohida, tahrirlanadigan xarita xizmatining birinchi 
 - Surxondaryoga markazlangan MapLibre xaritasi.
 - Kompyuterda chap panel, telefonda pastki boshqaruv paneli.
 - Administrator login orqali kiradi.
-- Xarita ustiga bosib ichki ko‘cha chizadi.
+- Xarita ustiga bosib ichki ko‘cha chizadi; yo‘l oq-kulrang uslubda va zoomga mos en bilan ko‘rinadi.
+- Yangi ko‘cha avval chizilgan Ko‘prik yo‘liga yaqin bosilganda avtomatik ulanadi.
 - Chizilgan nuqtalarni surib yo‘l shaklini tuzatadi.
 - Ko‘cha nomi, turi, qoplamasi, harakat yo‘nalishi, tuman va mahallani kiritadi.
 - Ko‘chani draft sifatida saqlaydi, qayta tahrirlaydi, nashr qiladi, arxivlaydi va tiklaydi.
