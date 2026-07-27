@@ -137,7 +137,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .map-instruction strong { font-size: 11px; }
 .map-instruction span { color: #cbd2df; }
 
-.vertex-marker { width: 15px; height: 15px; border: 3px solid white; border-radius: 999px; background: var(--primary); box-shadow: 0 2px 8px rgba(20,32,55,.35); cursor: grab; }
+.vertex-marker { width: 12px; height: 12px; border: 2px solid #b8bec6; border-radius: 999px; background: #fff; box-shadow: 0 1px 5px rgba(20,32,55,.24); cursor: grab; }
 .vertex-marker:active { cursor: grabbing; }
 .maplibregl-canvas { outline: none; }
 .maplibregl-ctrl-logo { display: none !important; }
