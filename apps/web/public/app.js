@@ -1,5 +1,7 @@
 import { createEditorState } from "./editor-state.mjs";
 import { createOsmRasterStyle } from "./map-style.mjs";
+import { createSavedRoadLayers, createDraftRoadLayers } from "./road-style.mjs";
+import { snapCoordinateToRoads } from "./road-snap.mjs";
 
 const config = window.KOPRIK_CONFIG ?? {
   apiBase: "/api",
@@ -155,7 +157,6 @@ function roadToFeature(road) {
 function updateMapRoads() {
   if (!mapReady) return;
   map.getSource("roads-source")?.setData({ type: "FeatureCollection", features: roads.map(roadToFeature) });
-  map.getSource("selected-source")?.setData(selectedRoad ? { type: "FeatureCollection", features: [roadToFeature(selectedRoad)] } : emptyFeatureCollection());
 }
 
 function updateDraftMap() {
@@ -175,38 +176,14 @@ function updateDraftMap() {
 
 function setupMapLayers() {
   map.addSource("roads-source", { type: "geojson", data: emptyFeatureCollection() });
-  map.addLayer({
-    id: "roads-casing", type: "line", source: "roads-source",
-    paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 7, 3.5, 17, 11], "line-opacity": .9 },
-  });
-  map.addLayer({
-    id: "roads-line", type: "line", source: "roads-source",
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": ["match", ["get", "status"], "published", "#3157d5", "draft", "#d58a25", "archived", "#8993a5", "#3157d5"],
-      "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.5, 17, 7],
-      "line-opacity": ["case", ["==", ["get", "status"], "archived"], .55, .92],
-    },
-  });
-  map.addSource("selected-source", { type: "geojson", data: emptyFeatureCollection() });
-  map.addLayer({
-    id: "selected-line", type: "line", source: "selected-source",
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#e13b71", "line-width": ["interpolate", ["linear"], ["zoom"], 7, 4, 17, 11], "line-opacity": .88 },
-  });
+  createSavedRoadLayers().forEach((layer) => map.addLayer(layer));
+
   map.addSource("draft-source", { type: "geojson", data: emptyFeatureCollection() });
-  map.addLayer({
-    id: "draft-line", type: "line", source: "draft-source", filter: ["==", ["get", "kind"], "line"],
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#1f9b6d", "line-width": 5, "line-dasharray": [1.3, 1] },
-  });
-  map.addLayer({
-    id: "draft-points", type: "circle", source: "draft-source", filter: ["==", ["get", "kind"], "point"],
-    paint: { "circle-radius": 5, "circle-color": "#1f9b6d", "circle-stroke-width": 2, "circle-stroke-color": "#ffffff" },
-  });
-  map.on("mouseenter", "roads-line", () => { if (mode === "idle") map.getCanvas().style.cursor = "pointer"; });
-  map.on("mouseleave", "roads-line", () => { map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair"; });
-  map.on("click", "roads-line", (event) => {
+  createDraftRoadLayers().forEach((layer) => map.addLayer(layer));
+
+  map.on("mouseenter", "roads-fill", () => { if (mode === "idle") map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "roads-fill", () => { map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair"; });
+  map.on("click", "roads-fill", (event) => {
     if (mode !== "idle") return;
     event.originalEvent.cancelBubble = true;
     const id = event.features?.[0]?.properties?.id;
@@ -238,6 +215,23 @@ async function loadMapLibre() {
     script.addEventListener("error", () => { clearTimeout(timeout); reject(new Error("Xarita kutubxonasi yuklanmadi")); }, { once: true });
     document.head.append(script);
   });
+}
+
+function normalizedCoordinate(coordinate) {
+  return [Number(coordinate[0].toFixed(7)), Number(coordinate[1].toFixed(7))];
+}
+
+function snapToEditableRoads(coordinate) {
+  if (!mapReady) return normalizedCoordinate(coordinate);
+  const candidates = roads.filter((road) => road.id !== editingRoad?.id && road.status !== "archived");
+  const result = snapCoordinateToRoads({
+    coordinate,
+    roads: candidates,
+    project: (value) => map.project(value),
+    unproject: (value) => map.unproject(value),
+    tolerancePx: 14,
+  });
+  return normalizedCoordinate(result.coordinate);
 }
 
 async function initializeMap() {
@@ -273,7 +267,8 @@ async function initializeMap() {
   });
   map.on("click", (event) => {
     if (!["drawing", "editing"].includes(mode)) return;
-    draftCoordinates.push([Number(event.lngLat.lng.toFixed(7)), Number(event.lngLat.lat.toFixed(7))]);
+    const coordinate = snapToEditableRoads([event.lngLat.lng, event.lngLat.lat]);
+    draftCoordinates.push(coordinate);
     editor.setGeometry({ type: "LineString", coordinates: draftCoordinates });
     updateDraftMap();
   });
@@ -293,7 +288,15 @@ function renderVertexMarkers() {
       .addTo(map);
     marker.on("drag", () => {
       const value = marker.getLngLat();
-      draftCoordinates[index] = [Number(value.lng.toFixed(7)), Number(value.lat.toFixed(7))];
+      draftCoordinates[index] = normalizedCoordinate([value.lng, value.lat]);
+      editor.setGeometry({ type: "LineString", coordinates: draftCoordinates });
+      updateDraftMapWithoutMarkers();
+    });
+    marker.on("dragend", () => {
+      const value = marker.getLngLat();
+      const coordinate = snapToEditableRoads([value.lng, value.lat]);
+      draftCoordinates[index] = coordinate;
+      marker.setLngLat(coordinate);
       editor.setGeometry({ type: "LineString", coordinates: draftCoordinates });
       updateDraftMapWithoutMarkers();
     });
