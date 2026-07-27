@@ -35,3 +35,20 @@ test("fon xarita haqiqiy OpenStreetMap raster plitkalaridan tuziladi", async () 
   assert.equal(style.layers[0].source, "osm");
   assert.equal(style.layers[0].type, "raster");
 });
+
+test("xarita ilovasi bir xil yo‘l uslubini ishlatadi va mavjud chizilgan ko‘chalarga yopishadi", async () => {
+  const script = await readFile(new URL("../apps/web/public/app.js", import.meta.url), "utf8");
+  assert.match(script, /createSavedRoadLayers/);
+  assert.match(script, /createDraftRoadLayers/);
+  assert.match(script, /snapCoordinateToRoads/);
+  assert.doesNotMatch(script, /#e13b71/);
+  assert.doesNotMatch(script, /line-dasharray/);
+});
+
+test("tahrirlash nuqtalari yo‘l uslubini buzadigan ko‘k marker emas", async () => {
+  const css = await readFile(new URL("../apps/web/public/styles.css", import.meta.url), "utf8");
+  const markerRule = css.match(/\.vertex-marker\s*\{[^}]+\}/)?.[0] ?? "";
+  assert.match(markerRule, /background:\s*#fff/);
+  assert.match(markerRule, /border:\s*2px solid #b8bec6/);
+  assert.doesNotMatch(markerRule, /var\(--primary\)/);
+});
