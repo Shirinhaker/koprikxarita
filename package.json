@@ -1,11 +1,11 @@
 {
   "name": "koprik-xarita",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node apps/api/src/server.mjs",
-    "start": "node apps/api/src/server.mjs",
+    "start": "node apps/api/src/start-0005.mjs",
     "test": "node --test tests/*.test.mjs",
     "build": "node scripts/build.mjs",
     "check": "node scripts/check.mjs",
