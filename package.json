@@ -8,7 +8,9 @@
     "start": "node apps/api/src/server.mjs",
     "test": "node --test tests/*.test.mjs",
     "build": "node scripts/build.mjs",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "import-buildings": "node scripts/import-microsoft-buildings.mjs",
+    "dedup-buildings": "node scripts/dedup-buildings.mjs"
   },
   "engines": {
     "node": ">=22.12.0"
