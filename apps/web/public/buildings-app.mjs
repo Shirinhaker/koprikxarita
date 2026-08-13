@@ -35,9 +35,11 @@ export function initBuildings(map, ctx) {
   let draftPoints = [];
   let vertexMarkers = [];
   let popup = null;
+  let importPollTimer = null;
+  let lastImportState = "idle";
+  let lastImportedCount = 0;
+  let viewportReloadTimer = null;
 
-  // ---- Xarita qatlamlari ----
-  // Esri proyektorni binolar ostiga qo‘yamiz (beforeId = birinchi bino qatlami).
   map.addSource("buildings-source", { type: "geojson", data: emptyFC() });
   createSavedBuildingLayers().forEach((layer) => map.addLayer(layer));
   attachEsriProjector(map, {
@@ -46,13 +48,11 @@ export function initBuildings(map, ctx) {
     opacity: config.esriOpacity ?? 0.35,
     beforeId: "buildings-fill",
   });
-  // Standart holatda proyektor o‘chiq — foydalanuvchi yoqqanda ko‘rinadi.
   setEsriVisible(map, false);
 
   map.addSource("draft-building-source", { type: "geojson", data: emptyFC() });
   createDraftBuildingLayers().forEach((layer) => map.addLayer(layer));
 
-  // ---- Bino tanlash (chizish rejimidan tashqarida) ----
   map.on("mouseenter", "buildings-fill", () => { if (!drawing) map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "buildings-fill", () => { map.getCanvas().style.cursor = drawing ? "crosshair" : ""; });
   map.on("click", "buildings-fill", (event) => {
@@ -62,7 +62,6 @@ export function initBuildings(map, ctx) {
     if (building) selectBuilding(building, event.lngLat);
   });
 
-  // ---- Chizish: xaritani bosib poligon nuqtalarini qo‘shish ----
   map.on("click", (event) => {
     if (!drawing) return;
     draftPoints.push(round7([event.lngLat.lng, event.lngLat.lat]));
@@ -174,7 +173,6 @@ export function initBuildings(map, ctx) {
     }
   }
 
-  // ---- Tanlangan bino: popup + administrator amallari ----
   function selectBuilding(building, lngLat) {
     selected = building;
     closePopup();
@@ -238,20 +236,156 @@ export function initBuildings(map, ctx) {
 
   function closePopup() { popup?.remove(); popup = null; }
 
-  // ---- Yuklash ----
-  async function reload() {
+  function currentViewportBbox() {
+    if (map.getZoom() < 12) return null;
+    const bounds = map.getBounds();
+    return [
+      bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth(),
+    ].map((value) => Number(value.toFixed(6)));
+  }
+
+  async function reload({ skipImportStatus = false } = {}) {
     const status = isAdmin() && dom.statusFilter ? dom.statusFilter.value : "published";
-    try {
-      const result = await api(`/buildings?status=${encodeURIComponent(status)}`);
-      buildings = result.buildings ?? [];
-      map.getSource("buildings-source")?.setData(result.geojson ?? emptyFC());
-      if (dom.count) dom.count.textContent = `${buildings.length} ta`;
-    } catch (error) {
-      if (dom.count) dom.count.textContent = "—";
+    const bbox = currentViewportBbox();
+    if (!bbox) {
+      buildings = [];
+      map.getSource("buildings-source")?.setData(emptyFC());
+      if (dom.count) dom.count.textContent = "Yaqinlashtiring";
+    } else {
+      try {
+        const viewportQuery = `__viewport__:${bbox.join(",")};6000`;
+        const result = await api(`/buildings/search?status=${encodeURIComponent(status)}&q=${encodeURIComponent(viewportQuery)}`);
+        buildings = result.buildings ?? [];
+        map.getSource("buildings-source")?.setData(result.geojson ?? emptyFC());
+        if (dom.count) dom.count.textContent = `${buildings.length} ta`;
+      } catch (error) {
+        if (dom.count) dom.count.textContent = "—";
+      }
+    }
+    ensureMicrosoftImportControls();
+    if (dom.microsoftImportWrap) dom.microsoftImportWrap.hidden = !isAdmin();
+    if (!skipImportStatus) refreshImportStatus();
+  }
+
+  function scheduleViewportReload() {
+    clearTimeout(viewportReloadTimer);
+    viewportReloadTimer = setTimeout(() => reload({ skipImportStatus: true }), 180);
+  }
+
+  function ensureMicrosoftImportControls() {
+    if (!dom.panel || dom.microsoftImportWrap) return;
+    const wrap = document.createElement("div");
+    wrap.className = "microsoft-import-controls admin-only";
+    wrap.hidden = !isAdmin();
+    wrap.style.display = "grid";
+    wrap.style.gap = "8px";
+    wrap.style.margin = "12px 0";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button button-secondary button-wide";
+    button.textContent = "Microsoft binolarini yuklash";
+
+    const status = document.createElement("p");
+    status.className = "helper-text";
+    status.textContent = "Microsoft Building Footprints holati tekshirilmoqda…";
+
+    wrap.append(button, status);
+    const imagery = dom.panel.querySelector(".imagery-controls");
+    if (imagery) imagery.before(wrap);
+    else dom.panel.append(wrap);
+
+    dom.microsoftImportWrap = wrap;
+    dom.microsoftImportButton = button;
+    dom.microsoftImportStatus = status;
+    button.addEventListener("click", startMicrosoftImport);
+  }
+
+  function importStatusText(status) {
+    if (!status) return "Microsoft import holati noma’lum";
+    if (status.state === "running") {
+      const tile = status.totalTiles ? ` · tayl ${status.currentTile}/${status.totalTiles}` : "";
+      return `Yuklanmoqda: ${status.imported ?? 0} ta bino${tile}`;
+    }
+    if (status.state === "failed") return `Import xatosi: ${status.error || "noma’lum xato"}`;
+    if (status.state === "completed") {
+      return status.message || `Microsoft binolari tayyor: ${status.imported ?? 0} ta`;
+    }
+    return "Microsoft binolari hali yuklanmagan";
+  }
+
+  function renderImportStatus(status) {
+    ensureMicrosoftImportControls();
+    if (!dom.microsoftImportWrap) return;
+    dom.microsoftImportWrap.hidden = !isAdmin();
+    if (!isAdmin()) return;
+    if (dom.microsoftImportStatus) dom.microsoftImportStatus.textContent = importStatusText(status);
+    if (dom.microsoftImportButton) {
+      dom.microsoftImportButton.disabled = status?.state === "running";
+      dom.microsoftImportButton.textContent = status?.state === "running"
+        ? "Microsoft binolari yuklanmoqda…"
+        : "Microsoft binolarini yuklash";
     }
   }
 
-  // ---- Proyektor boshqaruvi ----
+  function scheduleImportPoll() {
+    clearTimeout(importPollTimer);
+    importPollTimer = setTimeout(() => refreshImportStatus(), 1800);
+  }
+
+  async function refreshImportStatus() {
+    ensureMicrosoftImportControls();
+    if (!isAdmin()) {
+      clearTimeout(importPollTimer);
+      if (dom.microsoftImportWrap) dom.microsoftImportWrap.hidden = true;
+      return;
+    }
+    try {
+      const result = await api("/buildings/import-microsoft/status");
+      const status = result.status ?? { state: "idle", imported: 0 };
+      renderImportStatus(status);
+
+      if ((status.imported ?? 0) !== lastImportedCount) {
+        lastImportedCount = status.imported ?? 0;
+        if (dom.statusFilter) dom.statusFilter.value = "all";
+        await reload({ skipImportStatus: true });
+      }
+
+      if (lastImportState === "running" && status.state === "completed") {
+        if (dom.statusFilter) dom.statusFilter.value = "all";
+        await reload({ skipImportStatus: true });
+        toast(`${status.imported ?? 0} ta Microsoft binosi yuklandi`, "success");
+      }
+      lastImportState = status.state;
+      if (status.state === "running") scheduleImportPoll();
+    } catch (error) {
+      if (dom.microsoftImportStatus) dom.microsoftImportStatus.textContent = `Import holati olinmadi: ${error.message}`;
+    }
+  }
+
+  async function startMicrosoftImport() {
+    if (!isAdmin()) return;
+    ensureMicrosoftImportControls();
+    if (dom.microsoftImportButton) dom.microsoftImportButton.disabled = true;
+    try {
+      const result = await api("/buildings/import-microsoft", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const status = result.status ?? { state: result.started ? "running" : "idle" };
+      renderImportStatus(status);
+      if (result.started) toast("Microsoft binolarini yuklash boshlandi", "success");
+      else if (status.message) toast(status.message);
+      lastImportState = status.state;
+      if (dom.statusFilter) dom.statusFilter.value = "all";
+      await reload({ skipImportStatus: true });
+      if (status.state === "running") scheduleImportPoll();
+    } catch (error) {
+      toast(error.message, "error");
+      if (dom.microsoftImportButton) dom.microsoftImportButton.disabled = false;
+    }
+  }
+
   function toggleImagery(visible) {
     setEsriVisible(map, visible);
     if (dom.opacity) dom.opacity.disabled = !visible;
@@ -260,13 +394,13 @@ export function initBuildings(map, ctx) {
     setEsriOpacity(map, Number(value) / 100);
   }
 
-  // ---- Interfeys hodisalari ----
   dom.drawButton?.addEventListener("click", () => (drawing ? cancelDraw() : startDraw()));
   dom.finishButton?.addEventListener("click", saveDraft);
   dom.cancelButton?.addEventListener("click", cancelDraw);
   dom.undoButton?.addEventListener("click", undoPoint);
   dom.form?.addEventListener("submit", saveDraft);
   dom.statusFilter?.addEventListener("change", reload);
+  map.on("moveend", scheduleViewportReload);
   dom.imageryToggle?.addEventListener("change", (e) => toggleImagery(e.target.checked));
   dom.opacity?.addEventListener("input", (e) => setImageryOpacity(e.target.value));
   if (dom.opacity) { dom.opacity.value = String(Math.round((config.esriOpacity ?? 0.35) * 100)); dom.opacity.disabled = true; }
@@ -276,11 +410,11 @@ export function initBuildings(map, ctx) {
     if ((event.key === "Backspace" || event.key === "Delete") && document.activeElement?.tagName !== "INPUT") { event.preventDefault(); undoPoint(); }
   });
 
+  ensureMicrosoftImportControls();
   reload();
-  return { reload, toggleImagery, setImageryOpacity, startDraw, cancelDraw };
+  return { reload, refreshImportStatus, toggleImagery, setImageryOpacity, startDraw, cancelDraw };
 }
 
-// ---- Yordamchilar ----
 function collectDom() {
   const $ = (s) => document.querySelector(s);
   return {
@@ -301,6 +435,9 @@ function collectDom() {
     count: $("#buildingCount"),
     imageryToggle: $("#imageryToggle"),
     opacity: $("#imageryOpacity"),
+    microsoftImportWrap: null,
+    microsoftImportButton: null,
+    microsoftImportStatus: null,
   };
 }
 
