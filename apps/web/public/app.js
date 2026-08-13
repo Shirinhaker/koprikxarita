@@ -2,6 +2,9 @@ import { createEditorState } from "./editor-state.mjs";
 import { createOsmRasterStyle } from "./map-style.mjs";
 import { createSavedRoadLayers, createDraftRoadLayers } from "./road-style.mjs";
 import { snapCoordinateToRoads } from "./road-snap.mjs";
+import { initBuildings } from "./buildings-app.mjs";
+
+let buildingsController = null;
 
 const config = window.KOPRIK_CONFIG ?? {
   apiBase: "/api",
@@ -109,6 +112,7 @@ function renderAuth() {
   dom.statusFilterWrap.hidden = !isAdmin();
   if (!isAdmin() && mode !== "idle") cancelEditing();
   reloadRoads();
+  buildingsController?.reload();
 }
 
 function loginDialogOpen() {
@@ -184,7 +188,7 @@ function setupMapLayers() {
   map.on("mouseenter", "roads-fill", () => { if (mode === "idle") map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "roads-fill", () => { map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair"; });
   map.on("click", "roads-fill", (event) => {
-    if (mode !== "idle") return;
+    if (mode !== "idle" || window.__buildingDrawing) return;
     event.originalEvent.cancelBubble = true;
     const id = event.features?.[0]?.properties?.id;
     const road = roads.find((item) => item.id === id);
@@ -260,6 +264,17 @@ async function initializeMap() {
   map.on("load", () => {
     mapReady = true;
     setupMapLayers();
+    try {
+      buildingsController = initBuildings(map, {
+        config,
+        maplibre: window.maplibregl,
+        isAdmin,
+        api,
+        toast,
+      });
+    } catch (error) {
+      console.error("Binolar qatlamini ulashda xato:", error);
+    }
     dom.mapLoading.classList.add("loaded");
   });
   map.on("error", (event) => {
