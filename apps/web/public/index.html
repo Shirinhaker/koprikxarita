@@ -8,7 +8,7 @@
     <meta name="description" content="Surxondaryo uchun tahrirlanadigan mustaqil xarita xizmati" />
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
-    <link rel="stylesheet" href="/styles.css?build=0003" />
+    <link rel="stylesheet" href="/styles.css?build=0004" />
   </head>
   <body>
     <div class="app-shell">
@@ -162,6 +162,86 @@
             </label>
             <div id="roadsList" class="roads-list" aria-live="polite"></div>
           </section>
+
+          <section id="buildingsPanel" class="panel-section buildings-section">
+            <div class="section-title-row">
+              <h2>Binolar</h2>
+              <span id="buildingCount" class="count-badge">0 ta</span>
+            </div>
+
+            <div class="imagery-controls">
+              <label class="imagery-toggle">
+                <input id="imageryToggle" type="checkbox" />
+                <span>Sun’iy yo‘ldosh (Esri) — tekshirish uchun</span>
+              </label>
+              <label class="imagery-opacity">
+                <span>Shaffoflik</span>
+                <input id="imageryOpacity" type="range" min="0" max="100" value="35" disabled />
+              </label>
+              <p class="helper-text">Esri tasviri faqat orientir/tekshirish uchun ko‘rsatiladi. Chizilgan binolar OSM asosiga saqlanadi.</p>
+            </div>
+
+            <div class="admin-only tool-grid" hidden>
+              <button id="buildingDrawButton" class="tool-button tool-button-primary" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12"/><path d="M4 20h16M9 20v-6h6v6"/></svg>
+                <span>Bino chizish</span>
+              </button>
+              <button id="buildingUndoButton" class="tool-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></svg>
+                <span>Oxirgi nuqta</span>
+              </button>
+              <button id="buildingCancelButton" class="tool-button" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+                <span>Bekor qilish</span>
+              </button>
+            </div>
+            <p id="buildingHint" class="helper-text admin-only" hidden>“Bino chizish”ni bosing, so‘ng bino burchaklarini xaritada belgilang.</p>
+
+            <form id="buildingForm" class="building-form admin-only" hidden>
+              <div class="section-title-row">
+                <h3 class="mini-title">Yangi bino</h3>
+                <span id="buildingPointCount" class="count-badge">0 nuqta</span>
+              </div>
+              <label class="field field-wide">
+                <span>Nomi (ixtiyoriy)</span>
+                <input id="buildingName" maxlength="180" placeholder="Masalan: 12-maktab" />
+              </label>
+              <div class="field-row">
+                <label class="field">
+                  <span>Turi</span>
+                  <select id="buildingType">
+                    <option value="residential">Turar-joy</option>
+                    <option value="commercial">Tijorat</option>
+                    <option value="industrial">Sanoat</option>
+                    <option value="public">Jamoat</option>
+                    <option value="religious">Diniy</option>
+                    <option value="education">Ta’lim</option>
+                    <option value="health">Sog‘liq</option>
+                    <option value="other">Boshqa</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Qavat</span>
+                  <input id="buildingLevels" type="number" min="0" max="200" placeholder="1" />
+                </label>
+              </div>
+              <div class="field-row">
+                <label class="field"><span>Tuman</span><input id="buildingDistrict" maxlength="120" placeholder="Qumqo‘rg‘on" /></label>
+                <label class="field"><span>Mahalla</span><input id="buildingNeighborhood" maxlength="120" placeholder="Mahalla" /></label>
+              </div>
+              <button id="buildingFinishButton" class="button button-primary button-wide" type="submit" disabled>Draftni saqlash</button>
+            </form>
+
+            <label id="buildingStatusFilterWrap" class="filter-field admin-only" hidden>
+              <span>Holat</span>
+              <select id="buildingStatusFilter">
+                <option value="all">Barchasi</option>
+                <option value="published">Nashr qilingan</option>
+                <option value="draft">Draft</option>
+                <option value="archived">Arxiv</option>
+              </select>
+            </label>
+          </section>
         </aside>
 
         <section class="map-stage" aria-label="Surxondaryo xaritasi">
@@ -204,14 +284,15 @@
       <div class="modal-card">
         <button class="modal-close" type="button" data-close-dialog aria-label="Yopish">×</button>
         <h2>Xarita ma’lumoti</h2>
-        <p>Fon xarita ma’lumotlari OpenStreetMap ishtirokchilari hissasiga asoslanadi. Loyiha o‘z serveridagi PMTiles xaritasiga ulanishga tayyor.</p>
+        <p>Fon xarita ma’lumotlari OpenStreetMap ishtirokchilari hissasiga asoslanadi (ODbL). Bino ma’lumotlari OpenStreetMap va Microsoft Building Footprints manbalaridan (ODbL).</p>
+        <p>Sun’iy yo‘ldosh tasviri (yoqilganda): &copy; Esri, Maxar, Earthstar Geographics — faqat tekshirish/orientir uchun ko‘rsatiladi.</p>
         <a class="text-link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap litsenziyasini ko‘rish</a>
       </div>
     </dialog>
 
     <div id="toastRegion" class="toast-region" aria-live="polite"></div>
 
-    <script src="/config.js?build=0003"></script>
-    <script type="module" src="/app.js?build=0003"></script>
+    <script src="/config.js?build=0004"></script>
+    <script type="module" src="/app.js?build=0004"></script>
   </body>
 </html>
