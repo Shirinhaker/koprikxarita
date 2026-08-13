@@ -203,3 +203,33 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ===== Binolar paneli va Esri proyektor boshqaruvi (BUILD 0004) ===== */
+.imagery-controls { display: grid; gap: 10px; margin-bottom: 14px; }
+.imagery-toggle { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text); cursor: pointer; }
+.imagery-toggle input { width: 17px; height: 17px; accent-color: var(--primary); }
+.imagery-opacity { display: grid; gap: 5px; }
+.imagery-opacity > span { font-size: 11px; color: var(--muted); font-weight: 650; }
+.imagery-opacity input[type="range"] { width: 100%; accent-color: var(--primary); }
+.imagery-opacity input[type="range"]:disabled { opacity: .45; }
+
+.building-form { display: grid; gap: 12px; margin-top: 12px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.mini-title { margin: 0; font-size: 14px; }
+.buildings-section .tool-grid { margin-top: 6px; }
+#buildingDrawButton.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* Bino popup */
+.building-popup { display: grid; gap: 8px; font-size: 13px; color: var(--text); min-width: 200px; }
+.building-popup strong { font-size: 14px; }
+.bp-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.bp-chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 7px; font-size: 10px; font-weight: 700; background: var(--surface-subtle); color: var(--muted); }
+.bp-chip.status-published { background: #eef1f5; color: #556; }
+.bp-chip.status-draft { background: var(--primary-soft); color: var(--primary); }
+.bp-chip.status-archived { background: #f3f0ee; color: #987; }
+.bp-chip.ok { background: #e9f8f1; color: #176b4b; }
+.bp-chip.warn { background: #fff5e6; color: var(--warning); }
+.bp-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 2px 0 0; }
+.bp-meta dt { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.bp-meta dd { margin: 2px 0 0; font-size: 12px; font-weight: 650; }
+.bp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.bp-btn { padding: 5px 10px; font-size: 12px; }
