@@ -10,3 +10,7 @@ window.KOPRIK_CONFIG = {
   zoom: 8,
   projectName: "Ko‘prik Xarita"
 };
+
+import("/microsoft-import-panel.mjs?build=0006").catch((error) => {
+  console.error("Microsoft binolar import paneli yuklanmadi:", error);
+});
