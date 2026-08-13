@@ -10,6 +10,17 @@ import {
   RoadNotFoundError,
   RoadPublishError,
 } from "../../../src/storage/json-road-repository.mjs";
+import {
+  BuildingValidationError,
+  isInsideSurxondaryo as isBuildingInsideSurxondaryo,
+  toFeatureCollection as buildingsToFeatureCollection,
+} from "../../../src/domain/buildings.mjs";
+import {
+  JsonBuildingRepository,
+  BuildingConflictError,
+  BuildingNotFoundError,
+  BuildingPublishError,
+} from "../../../src/storage/json-building-repository.mjs";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -81,6 +92,18 @@ function errorResponse(response, error) {
   if (error instanceof RoadPublishError) {
     return sendJson(response, 422, { code: error.code, message: error.message });
   }
+  if (error instanceof BuildingValidationError) {
+    return sendJson(response, 422, { code: error.code, message: error.message, details: error.details });
+  }
+  if (error instanceof BuildingConflictError) {
+    return sendJson(response, 409, { code: error.code, message: error.message });
+  }
+  if (error instanceof BuildingNotFoundError) {
+    return sendJson(response, 404, { code: error.code, message: error.message });
+  }
+  if (error instanceof BuildingPublishError) {
+    return sendJson(response, 422, { code: error.code, message: error.message });
+  }
   if (error?.code === "BODY_TOO_LARGE") {
     return sendJson(response, 413, { code: error.code, message: error.message });
   }
@@ -127,7 +150,7 @@ async function serveStatic(response, publicDir, pathname) {
   }
 }
 
-export function createKoprikServer({ repository, jwtSecret, publicDir, users, webOrigin = "*" }) {
+export function createKoprikServer({ repository, buildingRepository, jwtSecret, publicDir, users, webOrigin = "*" }) {
   if (!repository) throw new Error("repository kerak");
   if (!jwtSecret) throw new Error("jwtSecret kerak");
 
@@ -235,6 +258,80 @@ export function createKoprikServer({ repository, jwtSecret, publicDir, users, we
         return sendJson(response, 200, road);
       }
 
+      // ===== Binolar (buildings) — yo‘llar bilan bir xil naqsh =====
+      if (buildingRepository && pathname.startsWith("/api/buildings")) {
+        if (request.method === "GET" && pathname === "/api/buildings/search") {
+          const user = authenticateRequest(request, jwtSecret);
+          const requestedStatus = url.searchParams.get("status") ?? "published";
+          const status = user?.role === "admin" ? requestedStatus : "published";
+          const buildings = await buildingRepository.search(url.searchParams.get("q") ?? "", status);
+          return sendJson(response, 200, { buildings, geojson: buildingsToFeatureCollection(buildings) });
+        }
+
+        if (request.method === "GET" && pathname === "/api/buildings") {
+          const user = authenticateRequest(request, jwtSecret);
+          const requestedStatus = url.searchParams.get("status") ?? "published";
+          const status = user?.role === "admin" ? requestedStatus : "published";
+          const buildings = await buildingRepository.list(status);
+          return sendJson(response, 200, { buildings, geojson: buildingsToFeatureCollection(buildings) });
+        }
+
+        if (request.method === "POST" && pathname === "/api/buildings/import") {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const body = await readJsonBody(request, 32 * 1024 * 1024);
+          const items = Array.isArray(body?.buildings) ? body.buildings : [];
+          if (items.length === 0) {
+            return sendJson(response, 422, { code: "BUILDING_IMPORT_EMPTY", message: "Import uchun binolar yuborilmadi" });
+          }
+          const result = await buildingRepository.importMany(items, user, { source: body.source ?? "manual" });
+          return sendJson(response, 201, result);
+        }
+
+        if (request.method === "POST" && pathname === "/api/buildings") {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const building = await buildingRepository.create(await readJsonBody(request), user);
+          const warnings = isBuildingInsideSurxondaryo(building.geometry) ? [] : ["Bino Surxondaryo chegarasidan tashqarida bo‘lishi mumkin"];
+          return sendJson(response, 201, { ...building, warnings });
+        }
+
+        const bIdMatch = /^\/api\/buildings\/([^/]+)$/.exec(pathname);
+        if (request.method === "GET" && bIdMatch) {
+          const building = await buildingRepository.getById(bIdMatch[1]);
+          const user = authenticateRequest(request, jwtSecret);
+          if (!building || (building.status !== "published" && user?.role !== "admin")) {
+            throw new BuildingNotFoundError();
+          }
+          return sendJson(response, 200, { building });
+        }
+
+        if (request.method === "PUT" && bIdMatch) {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const building = await buildingRepository.update(bIdMatch[1], await readJsonBody(request), user);
+          return sendJson(response, 200, building);
+        }
+
+        if (request.method === "DELETE" && bIdMatch) {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          return sendJson(response, 200, await buildingRepository.archive(bIdMatch[1], user));
+        }
+
+        const bActionMatch = /^\/api\/buildings\/([^/]+)\/(publish|restore|verify|unverify)$/.exec(pathname);
+        if (request.method === "POST" && bActionMatch) {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const [, id, action] = bActionMatch;
+          let building;
+          if (action === "publish") building = await buildingRepository.publish(id, user);
+          else if (action === "restore") building = await buildingRepository.restore(id, user);
+          else building = await buildingRepository.setVerified(id, action === "verify", user);
+          return sendJson(response, 200, building);
+        }
+      }
+
       if (pathname.startsWith("/api/")) {
         return sendJson(response, 404, { code: "NOT_FOUND", message: "API manzili topilmadi" });
       }
@@ -272,8 +369,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === currentFile) {
     roadsFile: process.env.ROADS_FILE ?? path.join(projectRoot, "data/roads.json"),
     logFile: process.env.ROAD_LOG_FILE ?? path.join(projectRoot, "data/road-change-log.json"),
   });
+  const buildingRepository = new JsonBuildingRepository({
+    buildingsFile: process.env.BUILDINGS_FILE ?? path.join(projectRoot, "data/buildings.json"),
+    logFile: process.env.BUILDING_LOG_FILE ?? path.join(projectRoot, "data/building-change-log.json"),
+  });
   const server = createKoprikServer({
     repository,
+    buildingRepository,
     jwtSecret: process.env.JWT_SECRET ?? "development-only-secret-change-me",
     publicDir: path.join(projectRoot, "apps/web/public"),
     users: defaultUsers(),
