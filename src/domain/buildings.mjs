@@ -106,11 +106,23 @@ function validatePolygon(geometry) {
       throw new BuildingValidationError("BUILDING_RING_TOO_SHORT", `${ringIndex + 1}-halqa kamida 4 nuqtadan iborat bo‘lishi kerak`);
     }
     const cleaned = ring.map((position, pointIndex) => cleanPosition(position, ringIndex, pointIndex));
+
+    // Halqa yopiq bo‘lishi shart: birinchi va oxirgi nuqta bir xil.
     const first = cleaned[0];
     const last = cleaned[cleaned.length - 1];
-    if (first[0] !== last[0] || first[1] !== last[1]) cleaned.push([first[0], first[1]]);
+    if (first[0] !== last[0] || first[1] !== last[1]) {
+      cleaned.push([first[0], first[1]]);
+    }
+    if (cleaned.length < 4) {
+      throw new BuildingValidationError("BUILDING_RING_TOO_SHORT", `${ringIndex + 1}-halqada yetarli nuqta yo‘q`);
+    }
+
+    // Kamida 3 xil nuqta bo‘lishi kerak (yopilishdan tashqari).
     const unique = new Set(cleaned.slice(0, -1).map((p) => `${p[0]},${p[1]}`));
-    if (unique.size < 3) throw new BuildingValidationError("BUILDING_RING_DEGENERATE", `${ringIndex + 1}-halqa buzuq (uch xil nuqta yo‘q)`);
+    if (unique.size < 3) {
+      throw new BuildingValidationError("BUILDING_RING_DEGENERATE", `${ringIndex + 1}-halqa buzuq (uch xil nuqta yo‘q)`);
+    }
+
     totalVertices += cleaned.length;
     return cleaned;
   });
@@ -118,15 +130,19 @@ function validatePolygon(geometry) {
   if (totalVertices > BUILDING_MAX_VERTICES) {
     throw new BuildingValidationError("BUILDING_GEOMETRY_TOO_LARGE", `Binoda ${BUILDING_MAX_VERTICES} tadan ortiq nuqta bo‘lishi mumkin emas`);
   }
+
   return { type: "Polygon", coordinates: rings };
 }
 
+// Poligon maydoni (m², taxminiy). Tashqi halqa bo‘yicha, halqa markazidagi
+// kenglikda ekvatorial proyeksiya bilan hisoblanadi. Kichik hududlar uchun aniq.
 export function polygonAreaSqm(geometry) {
   const ring = geometry.coordinates[0];
-  const R = 6378137;
+  const R = 6378137; // Yer radiusi (m)
   const rad = Math.PI / 180;
   const latRef = ring.reduce((sum, [, lat]) => sum + lat, 0) / ring.length;
   const cosLat = Math.cos(latRef * rad);
+
   let area = 0;
   for (let i = 0; i < ring.length - 1; i += 1) {
     const [lng1, lat1] = ring[i];
@@ -141,49 +157,86 @@ export function polygonAreaSqm(geometry) {
 }
 
 export function validateBuildingInput(input) {
-  if (!input || typeof input !== "object") throw new BuildingValidationError("BUILDING_INPUT_INVALID", "Bino ma’lumotlari yuborilmadi");
+  if (!input || typeof input !== "object") {
+    throw new BuildingValidationError("BUILDING_INPUT_INVALID", "Bino ma’lumotlari yuborilmadi");
+  }
+
   const geometry = validatePolygon(input.geometry);
   const area = polygonAreaSqm(geometry);
   if (area < BUILDING_MIN_AREA_SQM || area > BUILDING_MAX_AREA_SQM) {
-    throw new BuildingValidationError("BUILDING_AREA_INVALID", "Bino maydoni haqiqiy emas", { areaSqm: Number(area.toFixed(2)), min: BUILDING_MIN_AREA_SQM, max: BUILDING_MAX_AREA_SQM });
+    throw new BuildingValidationError("BUILDING_AREA_INVALID", "Bino maydoni haqiqiy emas", {
+      areaSqm: Number(area.toFixed(2)),
+      min: BUILDING_MIN_AREA_SQM,
+      max: BUILDING_MAX_AREA_SQM,
+    });
   }
+
   const status = requireEnum(input.status ?? "draft", BUILDING_STATUSES, "status", "Holat");
   const result = {
     name: requireText(input.name ?? "", "Bino nomi", 180),
     buildingType: requireEnum(input.buildingType ?? "other", BUILDING_TYPES, "buildingType", "Bino turi"),
     material: requireEnum(input.material ?? "unknown", BUILDING_MATERIALS, "material", "Qurilish materiali"),
-    levels: optionalLevels(input.levels), status,
+    levels: optionalLevels(input.levels),
+    status,
     districtName: requireText(input.districtName ?? "", "Tuman", 120),
     neighborhoodName: requireText(input.neighborhoodName ?? "", "Mahalla", 120),
     source: requireEnum(input.source ?? "manual", BUILDING_SOURCES, "source", "Manba"),
     sourceConfidence: optionalConfidence(input.sourceConfidence),
-    verified: Boolean(input.verified ?? false), areaSqm: Number(area.toFixed(2)), geometry,
+    verified: Boolean(input.verified ?? false),
+    areaSqm: Number(area.toFixed(2)),
+    geometry,
   };
+
   if (input.expectedUpdatedAt !== undefined) {
-    if (typeof input.expectedUpdatedAt !== "string" || Number.isNaN(Date.parse(input.expectedUpdatedAt))) throw new BuildingValidationError("BUILDING_VERSION_INVALID", "updatedAt qiymati noto‘g‘ri");
+    if (typeof input.expectedUpdatedAt !== "string" || Number.isNaN(Date.parse(input.expectedUpdatedAt))) {
+      throw new BuildingValidationError("BUILDING_VERSION_INVALID", "updatedAt qiymati noto‘g‘ri");
+    }
     result.expectedUpdatedAt = input.expectedUpdatedAt;
   }
+
   return result;
 }
 
+// Nashrga tayyorlik: mashina manbasidan kelgan bino avval inson tomonidan
+// tekshirilishi (verified) shart. Qo‘lda chizilgan bino uchun bu shart yo‘q.
 export function canPublishBuilding(building) {
   const machineSourced = building.source === "microsoft" || building.source === "osm";
-  if (machineSourced && !building.verified) return { ok: false, message: "Mashina manbasidan kelgan bino nashrdan oldin tekshirilishi kerak" };
+  if (machineSourced && !building.verified) {
+    return { ok: false, message: "Mashina manbasidan kelgan bino nashrdan oldin tekshirilishi kerak" };
+  }
   return { ok: true };
 }
 
 export function isInsideSurxondaryo(geometry) {
   const bounds = { west: 66.1, south: 36.9, east: 68.7, north: 38.7 };
-  return geometry.coordinates.every((ring) => ring.every(([lng, lat]) => (lng >= bounds.west && lng <= bounds.east && lat >= bounds.south && lat <= bounds.north)));
+  return geometry.coordinates.every((ring) => ring.every(([lng, lat]) => (
+    lng >= bounds.west && lng <= bounds.east && lat >= bounds.south && lat <= bounds.north
+  )));
 }
 
 export function toFeatureCollection(buildings) {
-  return { type: "FeatureCollection", features: buildings.map((building) => ({
-    type: "Feature", id: building.id, geometry: building.geometry,
-    properties: {
-      id: building.id, name: building.name, buildingType: building.buildingType, material: building.material, levels: building.levels,
-      status: building.status, districtName: building.districtName, neighborhoodName: building.neighborhoodName, source: building.source,
-      sourceConfidence: building.sourceConfidence, verified: building.verified, areaSqm: building.areaSqm, createdAt: building.createdAt, updatedAt: building.updatedAt,
-    },
-  })) };
+  return {
+    type: "FeatureCollection",
+    features: buildings.map((building) => ({
+      type: "Feature",
+      id: building.id,
+      geometry: building.geometry,
+      properties: {
+        id: building.id,
+        name: building.name,
+        buildingType: building.buildingType,
+        material: building.material,
+        levels: building.levels,
+        status: building.status,
+        districtName: building.districtName,
+        neighborhoodName: building.neighborhoodName,
+        source: building.source,
+        sourceConfidence: building.sourceConfidence,
+        verified: building.verified,
+        areaSqm: building.areaSqm,
+        createdAt: building.createdAt,
+        updatedAt: building.updatedAt,
+      },
+    })),
+  };
 }
