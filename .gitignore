@@ -11,3 +11,6 @@ data/region-change-log.json
 data/buildings.json
 data/building-change-log.json
 data/building-shards/
+
+# Import loglari
+.import-log.txt
