@@ -1,3 +1,4 @@
+import { isPositionInside } from "./surxondaryo.mjs";
 export const ROAD_TYPES = ["residential", "service", "pedestrian", "track", "other"];
 export const ROAD_SURFACES = ["asphalt", "concrete", "gravel", "ground", "unknown"];
 export const ROAD_DIRECTIONS = ["two_way", "one_way"];
@@ -91,10 +92,7 @@ export function canPublishRoad(road) {
 }
 
 export function isInsideSurxondaryo(geometry) {
-  const bounds = { west: 66.1, south: 36.9, east: 68.7, north: 38.7 };
-  return geometry.coordinates.every(([lng, lat]) => (
-    lng >= bounds.west && lng <= bounds.east && lat >= bounds.south && lat <= bounds.north
-  ));
+  return geometry.coordinates.every((position) => isPositionInside(position));
 }
 
 export function toFeatureCollection(roads) {

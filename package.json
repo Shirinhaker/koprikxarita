@@ -1,6 +1,6 @@
 {
   "name": "koprik-xarita",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "build": "node scripts/build.mjs",
     "check": "node scripts/check.mjs",
     "import-buildings": "node scripts/import-microsoft-buildings.mjs",
-    "dedup-buildings": "node scripts/dedup-buildings.mjs"
+    "dedup-buildings": "node scripts/dedup-buildings.mjs",
+    "import-regions": "node scripts/import-osm-regions.mjs"
   },
   "engines": {
     "node": ">=22.12.0"

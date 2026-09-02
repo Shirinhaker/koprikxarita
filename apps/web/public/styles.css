@@ -233,3 +233,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .bp-meta dd { margin: 2px 0 0; font-size: 12px; font-weight: 650; }
 .bp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .bp-btn { padding: 5px 10px; font-size: 12px; }
+
+/* Hudud chegaralari — tuman va mahalla nomlari xarita ustida */
+.region-label { pointer-events: none; user-select: none; white-space: nowrap; font-weight: 700; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px #fff; }
+.region-label-tuman { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; opacity: .85; }
+.region-label-mahalla { font-size: 11px; letter-spacing: .01em; opacity: .8; }
+.region-popup-body { display: grid; gap: 3px; font-size: 13px; color: var(--text); min-width: 150px; }
+.region-popup-body strong { font-size: 14px; }
+.region-popup-body span { font-size: 12px; color: var(--muted); }
+.regions-section .helper-text { margin-top: 6px; }

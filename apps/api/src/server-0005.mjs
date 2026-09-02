@@ -6,6 +6,7 @@ import { createKoprikServer } from "./server.mjs";
 import { authenticateRequest, createToken } from "./auth.mjs";
 import { JsonRoadRepository } from "../../../src/storage/json-road-repository.mjs";
 import { JsonBuildingRepository } from "../../../src/storage/json-building-repository.mjs";
+import { JsonRegionRepository } from "../../../src/storage/json-region-repository.mjs";
 
 function sendJson(response, status, value) {
   const body = JSON.stringify(value);
@@ -47,6 +48,8 @@ export function resolveStoragePaths({ projectRoot, env = process.env }) {
     roadLogFile,
     buildingsFile: env.BUILDINGS_FILE ?? path.join(sharedDataDir, "buildings.json"),
     buildingLogFile: env.BUILDING_LOG_FILE ?? path.join(sharedDataDir, "building-change-log.json"),
+    regionsFile: env.REGIONS_FILE ?? path.join(sharedDataDir, "regions.json"),
+    regionLogFile: env.REGION_LOG_FILE ?? path.join(sharedDataDir, "region-change-log.json"),
   };
 }
 
@@ -191,9 +194,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === currentFile) {
   const storage = resolveStoragePaths({ projectRoot, env: process.env });
   const repository = new JsonRoadRepository({ roadsFile: storage.roadsFile, logFile: storage.roadLogFile });
   const buildingRepository = new JsonBuildingRepository({ buildingsFile: storage.buildingsFile, logFile: storage.buildingLogFile });
+  const regionRepository = new JsonRegionRepository({ regionsFile: storage.regionsFile, logFile: storage.regionLogFile });
   const baseServer = createKoprikServer({
     repository,
     buildingRepository,
+    regionRepository,
     jwtSecret,
     publicDir: path.join(projectRoot, "apps/web/public"),
     users: defaultUsers(),

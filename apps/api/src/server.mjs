@@ -21,6 +21,18 @@ import {
   BuildingNotFoundError,
   BuildingPublishError,
 } from "../../../src/storage/json-building-repository.mjs";
+import {
+  RegionValidationError,
+  isInsideSurxondaryo as isRegionInsideSurxondaryo,
+  toFeatureCollection as regionsToFeatureCollection,
+  toLabelFeatureCollection as regionsToLabelFeatureCollection,
+} from "../../../src/domain/regions.mjs";
+import {
+  JsonRegionRepository,
+  RegionConflictError,
+  RegionNotFoundError,
+  RegionPublishError,
+} from "../../../src/storage/json-region-repository.mjs";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -104,6 +116,18 @@ function errorResponse(response, error) {
   if (error instanceof BuildingPublishError) {
     return sendJson(response, 422, { code: error.code, message: error.message });
   }
+  if (error instanceof RegionValidationError) {
+    return sendJson(response, 422, { code: error.code, message: error.message, details: error.details });
+  }
+  if (error instanceof RegionConflictError) {
+    return sendJson(response, 409, { code: error.code, message: error.message });
+  }
+  if (error instanceof RegionNotFoundError) {
+    return sendJson(response, 404, { code: error.code, message: error.message });
+  }
+  if (error instanceof RegionPublishError) {
+    return sendJson(response, 422, { code: error.code, message: error.message });
+  }
   if (error?.code === "BODY_TOO_LARGE") {
     return sendJson(response, 413, { code: error.code, message: error.message });
   }
@@ -150,7 +174,7 @@ async function serveStatic(response, publicDir, pathname) {
   }
 }
 
-export function createKoprikServer({ repository, buildingRepository, jwtSecret, publicDir, users, webOrigin = "*" }) {
+export function createKoprikServer({ repository, buildingRepository, regionRepository, jwtSecret, publicDir, users, webOrigin = "*" }) {
   if (!repository) throw new Error("repository kerak");
   if (!jwtSecret) throw new Error("jwtSecret kerak");
 
@@ -332,6 +356,87 @@ export function createKoprikServer({ repository, buildingRepository, jwtSecret, 
         }
       }
 
+      // ===== Hududlar (regions) — tuman va mahalla chegaralari =====
+      // Yo'llar va binolar bilan bir xil naqsh. Farqi: hudud rasmiy manbadan
+      // keladi, shuning uchun import mavjudini yangilaydi (dublikat qilmaydi).
+      if (regionRepository && pathname.startsWith("/api/regions")) {
+        if (request.method === "GET" && pathname === "/api/regions") {
+          const user = authenticateRequest(request, jwtSecret);
+          const requestedStatus = url.searchParams.get("status") ?? "published";
+          const status = user?.role === "admin" ? requestedStatus : "published";
+          const level = url.searchParams.get("level") ?? undefined;
+          const regions = await regionRepository.list(status, { level });
+          return sendJson(response, 200, {
+            regions,
+            geojson: regionsToFeatureCollection(regions),
+            labels: regionsToLabelFeatureCollection(regions),
+          });
+        }
+
+        if (request.method === "POST" && pathname === "/api/regions/import") {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const body = await readJsonBody(request, 48 * 1024 * 1024);
+          const items = Array.isArray(body?.regions) ? body.regions : [];
+          if (items.length === 0) {
+            return sendJson(response, 422, { code: "REGION_IMPORT_EMPTY", message: "Import uchun hududlar yuborilmadi" });
+          }
+          const result = await regionRepository.importMany(items, user, {
+            source: body.source ?? "osm",
+            status: body.status ?? "published",
+          });
+          return sendJson(response, 201, {
+            created: result.created,
+            updated: result.updated,
+            regions: result.regions.map(({ geometry, ...rest }) => rest),
+          });
+        }
+
+        if (request.method === "POST" && pathname === "/api/regions") {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const region = await regionRepository.create(await readJsonBody(request, 16 * 1024 * 1024), user);
+          const warnings = isRegionInsideSurxondaryo(region.geometry)
+            ? []
+            : ["Hudud Surxondaryo chegarasidan tashqarida bo'lishi mumkin"];
+          return sendJson(response, 201, { ...region, warnings });
+        }
+
+        const rIdMatch = /^\/api\/regions\/([^/]+)$/.exec(pathname);
+        if (request.method === "GET" && rIdMatch) {
+          const region = await regionRepository.getById(rIdMatch[1]);
+          const user = authenticateRequest(request, jwtSecret);
+          if (!region || (region.status !== "published" && user?.role !== "admin")) {
+            throw new RegionNotFoundError();
+          }
+          return sendJson(response, 200, { region });
+        }
+
+        if (request.method === "PUT" && rIdMatch) {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const region = await regionRepository.update(rIdMatch[1], await readJsonBody(request, 16 * 1024 * 1024), user);
+          return sendJson(response, 200, region);
+        }
+
+        if (request.method === "DELETE" && rIdMatch) {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          return sendJson(response, 200, await regionRepository.archive(rIdMatch[1], user));
+        }
+
+        const rActionMatch = /^\/api\/regions\/([^/]+)\/(publish|restore)$/.exec(pathname);
+        if (request.method === "POST" && rActionMatch) {
+          const user = requireUser(request, response, jwtSecret, "admin");
+          if (!user) return;
+          const [, id, action] = rActionMatch;
+          const region = action === "publish"
+            ? await regionRepository.publish(id, user)
+            : await regionRepository.restore(id, user);
+          return sendJson(response, 200, region);
+        }
+      }
+
       if (pathname.startsWith("/api/")) {
         return sendJson(response, 404, { code: "NOT_FOUND", message: "API manzili topilmadi" });
       }
@@ -373,9 +478,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === currentFile) {
     buildingsFile: process.env.BUILDINGS_FILE ?? path.join(projectRoot, "data/buildings.json"),
     logFile: process.env.BUILDING_LOG_FILE ?? path.join(projectRoot, "data/building-change-log.json"),
   });
+  const regionRepository = new JsonRegionRepository({
+    regionsFile: process.env.REGIONS_FILE ?? path.join(projectRoot, "data/regions.json"),
+    logFile: process.env.REGION_LOG_FILE ?? path.join(projectRoot, "data/region-change-log.json"),
+  });
   const server = createKoprikServer({
     repository,
     buildingRepository,
+    regionRepository,
     jwtSecret: process.env.JWT_SECRET ?? "development-only-secret-change-me",
     publicDir: path.join(projectRoot, "apps/web/public"),
     users: defaultUsers(),
