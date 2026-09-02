@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { canPublishRegion, validateRegionInput } from "../domain/regions.mjs";
+import { canPublishRegion, regionBounds, validateRegionInput } from "../domain/regions.mjs";
+import { boundsOverlap } from "../domain/uzbekiston.mjs";
 
 export class RegionNotFoundError extends Error {
   constructor() {
@@ -66,13 +67,19 @@ export class JsonRegionRepository {
     return next;
   }
 
-  async list(status = "published", { level = undefined, parentId = undefined } = {}) {
+  // bbox — xarita ko'rinayotgan hudud. 206 ta tumanni bir yo'la yuborish
+  // ~7 MB bo'ladi, shuning uchun tuman qatlami faqat ko'rinayotgan joy
+  // uchun so'raladi. Filtr chegara qutisi bo'yicha — poligonning aniq
+  // kesishishini hisoblash bu yerda ortiqcha, quti yetarli.
+  async list(status = "published", { level = undefined, parentId = undefined, bbox = undefined, limit = undefined } = {}) {
     const regions = await readJson(this.regionsFile);
-    return regions
+    const filtered = regions
       .filter((region) => (status === "all" || region.status === status))
       .filter((region) => (level === undefined || region.level === level))
       .filter((region) => (parentId === undefined || region.parentId === parentId))
+      .filter((region) => (!bbox || boundsOverlap(regionBounds(region.geometry), bbox)))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), "uz"));
+    return limit ? filtered.slice(0, limit) : filtered;
   }
 
   async getById(id) {

@@ -12,8 +12,10 @@ const config = window.KOPRIK_CONFIG ?? {
   apiBase: "/api",
   osmTileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
   mapAttribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
-  center: [67.27, 37.94],
-  zoom: 8,
+  center: [64.6, 41.4],
+  zoom: 5.2,
+  maxBounds: [[54.5, 35.8], [74.6, 47.0]],
+  minZoom: 4.5,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -256,6 +258,10 @@ async function initializeMap() {
     }),
     center: config.center,
     zoom: config.zoom,
+    // Xarita O'zbekistondan chiqib ketmasin: niqob tashqarisini
+    // yopadi, bu esa u yerga suzib borishning o'zini to'xtatadi.
+    ...(config.maxBounds ? { maxBounds: config.maxBounds } : {}),
+    ...(config.minZoom ? { minZoom: config.minZoom } : {}),
     attributionControl: false,
     maplibreLogo: false,
     maxPitch: 0,

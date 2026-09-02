@@ -1,4 +1,4 @@
-import { isPositionInside } from "./surxondaryo.mjs";
+import { isPositionInside } from "./uzbekiston.mjs";
 // Bino domeni — yo‘llar (roads.mjs) uslubida, lekin Polygon geometriya uchun.
 // Qo‘shimcha: manba (source) va tekshirilgan (verified) maydonlari —
 // Microsoft / OSM / qo‘lda chizilgan binolarni ajratish va tekshiruv oqimi uchun.

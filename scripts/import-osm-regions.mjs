@@ -1,24 +1,30 @@
 #!/usr/bin/env node
 //
-// Surxondaryo tumanlarining chegaralarini OpenStreetMap'dan yuklab,
-// /api/regions/import ga yuboradi.
+// O'zbekiston viloyatlari va tumanlarining chegaralarini OpenStreetMap'dan
+// yuklab, /api/regions/import ga yuboradi.
 //
 // Ishlatish:
-//   npm run import-regions -- --login admin:admin12345 --dry-run
-//   npm run import-regions -- --login admin:admin12345
+//   npm run import-regions -- --login admin:PAROL --dry-run
+//   npm run import-regions -- --login admin:PAROL
 //
 // Bayroqlar:
-//   --api <manzil>      standart: http://localhost:4100/api
-//   --login user:parol  token o'rniga (avval login qiladi)
-//   --token <token>     tayyor token
-//   --level tuman       hozircha faqat "tuman" qo'llanadi (OSM admin_level=6)
-//   --tolerance 0.0002  geometriyani soddalashtirish (daraja). 0 — soddalashtirmaslik
-//   --dry-run           serverga yozmasdan, faqat nima kelishini ko'rsatadi
-//   --out <fayl>        yuklangan GeoJSON'ni faylga ham yozadi
+//   --api <manzil>       standart: http://localhost:4100/api
+//   --login user:parol   token o'rniga (avval login qiladi)
+//   --token <token>      tayyor token
+//   --only <ro'yxat>     faqat shu viloyatlar (vergul bilan), masalan: Surxondaryo,Buxoro
+//   --skip-districts     faqat viloyat chegaralarini yuklaydi
+//   --tolerance-viloyat  standart 0.004 (~400 m) — mamlakat ko'rinishi uchun yetarli
+//   --tolerance-tuman    standart 0.0008 (~80 m)
+//   --dry-run            serverga yozmasdan, faqat nima kelishini ko'rsatadi
+//   --out <fayl>         yuklangan GeoJSON'ni faylga ham yozadi
 //
-// Nega bu skript kerak: mahalla chegaralari OSM'da deyarli yo'q (Surxondaryo
-// bo'yicha atigi 3 ta), tuman chegaralari esa 14 tasi ham to'liq. Shuning
-// uchun tumanlar avtomatik olinadi, mahalla esa qo'lda chiziladi.
+// Nega ikki daraja: 206 ta tumanning to'liq geometriyasi ~7 MB. Uni sahifa
+// ochilishida yuklab bo'lmaydi. Shuning uchun viloyatlar qattiq
+// soddalashtiriladi (ular doim ko'rinadi), tumanlar esa xarita
+// ko'rinayotgan hudud bo'yicha so'raladi.
+//
+// Mahalla bu skriptda yo'q: OSM'da Surxondaryo bo'yicha atigi 3 ta bor,
+// shuning uchun mahalla qo'lda chiziladi.
 
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -26,23 +32,61 @@ const OVERPASS_ENDPOINTS = [
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 
-// Surxondaryo viloyati — OSM relation. admin_level=4.
-const SURXONDARYO_RELATION_ID = 196248;
+// O'zbekiston davlat chegarasi — xaritada qo'shni davlatlarni yopadigan
+// niqob shundan quriladi.
+const COUNTRY_RELATION_ID = 196240;
+
+// O'zbekistonning yuqori ma'muriy birliklari. Qoraqalpog'iston
+// admin_level=3 (avtonom respublika), qolganlari 4 — shuning uchun
+// bitta so'rov bilan topib bo'lmaydi va ro'yxat qo'lda qotirilgan.
+//
+// colorIndex — region-palette.mjs dagi rang raqami. Qo'lda tanlanmagan:
+// viloyatlarning haqiqiy chegaradoshligi geometriyadan hisoblanib
+// (18 ta chegaradosh juftlik topildi), ranglar shu graf bo'yicha
+// optimallashtirilgan. Natija: chegaradosh ikki viloyat rangi orasidagi
+// eng kichik farq ΔE 23.7 (talab >= 15). Oddiy g'arbdan-sharqqa
+// tartibda bu ko'rsatkich 10.4 edi va Jizzax bilan Navoiy deyarli
+// bir xil ko'rinardi.
+//
+// Viloyat qo'shilsa yoki chegara o'zgarsa, bu raqamlarni qayta
+// hisoblash kerak — docs/HUDUDLAR.md da usuli yozilgan.
+const PROVINCES = [
+  { id: 196241, name: "Qoraqalpogʻiston Respublikasi", colorIndex: 10 },
+  { id: 196242, name: "Xorazm", colorIndex: 11 },
+  { id: 1670973, name: "Buxoro", colorIndex: 8 },
+  { id: 196246, name: "Navoiy", colorIndex: 7 },
+  { id: 1670974, name: "Qashqadaryo", colorIndex: 9 },
+  { id: 196248, name: "Surxondaryo", colorIndex: 12 },
+  { id: 196249, name: "Samarqand", colorIndex: 6 },
+  { id: 196254, name: "Jizzax", colorIndex: 4 },
+  { id: 196253, name: "Sirdaryo", colorIndex: 1 },
+  { id: 196251, name: "Toshkent", colorIndex: 3 },
+  { id: 2216724, name: "Toshkent shahri", colorIndex: 5 },
+  { id: 178017, name: "Namangan", colorIndex: 0 },
+  { id: 178016, name: "Andijon", colorIndex: 13 },
+  { id: 178018, name: "Fargʻona", colorIndex: 2 },
+];
 
 // OSM admin_level -> loyihadagi daraja.
-const LEVEL_BY_ADMIN_LEVEL = { 6: "tuman", 9: "mahalla", 10: "mahalla" };
+const LEVEL_BY_ADMIN_LEVEL = { 3: "viloyat", 4: "viloyat", 6: "tuman", 7: "tuman", 9: "mahalla", 10: "mahalla" };
 
 function parseArgs(argv) {
-  const args = { api: "http://localhost:4100/api", level: "tuman", tolerance: 0.0002 };
+  const args = {
+    api: "http://localhost:4100/api",
+    toleranceViloyat: 0.004,
+    toleranceTuman: 0.0008,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
     if (key === "--dry-run") { args.dryRun = true; continue; }
+    if (key === "--skip-districts") { args.skipDistricts = true; continue; }
     const value = argv[i + 1];
     if (key === "--api") args.api = value;
     else if (key === "--token") args.token = value;
     else if (key === "--login") args.login = value;
-    else if (key === "--level") args.level = value;
-    else if (key === "--tolerance") args.tolerance = Number(value);
+    else if (key === "--only") args.only = value.split(",").map((name) => name.trim().toLowerCase());
+    else if (key === "--tolerance-viloyat") args.toleranceViloyat = Number(value);
+    else if (key === "--tolerance-tuman") args.toleranceTuman = Number(value);
     else if (key === "--out") args.out = value;
     else continue;
     i += 1;
@@ -50,18 +94,22 @@ function parseArgs(argv) {
   return args;
 }
 
-function adminLevelsFor(level) {
-  return Object.entries(LEVEL_BY_ADMIN_LEVEL)
-    .filter(([, mapped]) => mapped === level)
-    .map(([adminLevel]) => adminLevel);
+function countryQuery() {
+  return `[out:json][timeout:180];
+rel(${COUNTRY_RELATION_ID});
+out geom;`;
 }
 
-function buildQuery(level) {
-  const levels = adminLevelsFor(level);
-  if (levels.length === 0) throw new Error(`Noma'lum daraja: ${level}`);
+function provinceQuery(ids) {
   return `[out:json][timeout:180];
-rel(${SURXONDARYO_RELATION_ID});map_to_area->.su;
-rel(area.su)["boundary"="administrative"]["admin_level"~"^(${levels.join("|")})$"];
+(${ids.map((id) => `rel(${id});`).join("")});
+out geom;`;
+}
+
+function districtQuery(provinceId) {
+  return `[out:json][timeout:180];
+rel(${provinceId});map_to_area->.p;
+rel(area.p)["boundary"="administrative"]["admin_level"~"^(6|7)$"];
 out geom;`;
 }
 
@@ -236,9 +284,20 @@ function countVertices(geometry) {
 
 // OSM nomlarida "Tumani" / "tumani" qo'shimchasi bor. Ro'yxatda bir xil
 // ko'rinishi uchun uni olib tashlaymiz: "Denov Tumani" -> "Denov".
-function cleanName(tags) {
-  const raw = tags["name:uz"] ?? tags.name ?? "";
-  return raw.replace(/\s+tumani$/i, "").trim();
+// OSM nomlarida "Tumani", "Viloyati", "Respublikasi" qo'shimchasi bor va
+// harf katta-kichikligi bir xil emas ("Denov Tumani", "Uzun tumani").
+// Ro'yxatda va xaritada bir ko'rinishda bo'lishi uchun qo'shimcha
+// olib tashlanadi: "Denov Tumani" -> "Denov".
+// Toshkent shahri istisno — "shahri" uning nomining bir qismi va u
+// Toshkent viloyatidan shu bilan ajralib turadi.
+function cleanName(tags, level) {
+  const raw = (tags["name:uz"] ?? tags.name ?? "").trim();
+  if (level === "tuman") return raw.replace(/\s+(tumani|tuman|rayoni)$/i, "").trim();
+  if (level === "viloyat") {
+    if (/shahri|shahar/i.test(raw)) return raw;
+    return raw.replace(/\s+viloyati$/i, "").trim();
+  }
+  return raw;
 }
 
 async function loginForToken(api, login) {
@@ -252,80 +311,197 @@ async function loginForToken(api, login) {
   return (await response.json()).token;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (!args.token && args.login) args.token = await loginForToken(args.api, args.login);
-  if (!args.token && !args.dryRun) {
-    console.error("Xato: --token yoki --login kerak. Masalan: --login admin:admin12345");
-    process.exit(1);
-  }
+// OSM relation -> loyihadagi hudud obyekti.
+function toRegion(element, { level, tolerance, parentId = null, colorIndex = null, name: override = null }) {
+  // Viloyat nomi ro'yxatdan olinadi, OSM'dan emas: OSM'da Toshkent
+  // shahri ham, Toshkent viloyati ham "Toshkent" deb nomlangan va
+  // ular ro'yxatda farqlanmay qolardi.
+  const name = override ?? cleanName(element.tags ?? {}, level);
+  if (!name) return null;
+  const rings = assembleRings(element.members ?? []);
+  const geometry = ringsToGeometry(rings);
+  if (!geometry) return null;
 
-  console.log(`OpenStreetMap'dan "${args.level}" chegaralari so'ralmoqda…`);
-  const data = await fetchOverpass(buildQuery(args.level));
-  const elements = (data.elements ?? []).filter((element) => element.type === "relation");
-  console.log(`Topildi: ${elements.length} ta hudud`);
-
-  const regions = [];
-  let skipped = 0;
-  for (const element of elements) {
-    const name = cleanName(element.tags ?? {});
-    if (!name) { skipped += 1; continue; }
-
-    const rings = assembleRings(element.members ?? []);
-    const geometry = ringsToGeometry(rings);
-    if (!geometry) {
-      console.log(`  ⚠ ${name}: chegara halqasi yopilmadi, o'tkazib yuborildi`);
-      skipped += 1;
-      continue;
-    }
-
-    const before = countVertices(geometry);
-    const simplified = simplifyGeometry(geometry, args.tolerance);
-    const after = countVertices(simplified);
-
-    regions.push({
+  const before = countVertices(geometry);
+  const simplified = simplifyGeometry(geometry, tolerance);
+  return {
+    region: {
       name,
-      level: LEVEL_BY_ADMIN_LEVEL[element.tags.admin_level] ?? args.level,
+      level,
+      parentId,
+      colorIndex,
       source: "osm",
       sourceId: `relation/${element.id}`,
       code: element.tags["ref:soato"] ?? element.tags.ref ?? "",
       geometry: simplified,
-    });
-    console.log(`  ${name}: ${before} → ${after} nuqta`);
-  }
+    },
+    before,
+    after: countVertices(simplified),
+  };
+}
 
-  console.log(`\nTayyor: ${regions.length} ta hudud, ${skipped} ta o'tkazib yuborildi`);
-
-  if (args.out) {
-    const { writeFile } = await import("node:fs/promises");
-    const collection = {
-      type: "FeatureCollection",
-      features: regions.map((region) => ({
-        type: "Feature",
-        geometry: region.geometry,
-        properties: { name: region.name, level: region.level, sourceId: region.sourceId },
-      })),
-    };
-    await writeFile(args.out, `${JSON.stringify(collection)}\n`, "utf8");
-    console.log(`GeoJSON yozildi: ${args.out}`);
-  }
-
-  if (args.dryRun) {
-    console.log("--dry-run: serverga hech narsa yuborilmadi.");
-    return;
-  }
-
-  const response = await fetch(`${args.api}/regions/import`, {
+async function post(api, token, regions, label) {
+  const response = await fetch(`${api}/regions/import`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${args.token}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: JSON.stringify({ regions, source: "osm", status: "published" }),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    console.error(`Import xatosi (${response.status}): ${body.message ?? "noma'lum xato"}`);
+    throw new Error(`${label} import xatosi (${response.status}): ${body.message ?? "noma'lum xato"}`);
+  }
+  return body;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (!args.token && args.login) args.token = await loginForToken(args.api, args.login);
+  if (!args.token && !args.dryRun) {
+    console.error("Xato: --token yoki --login kerak. Masalan: --login admin:PAROL");
     process.exit(1);
   }
-  console.log(`Serverga yozildi: ${body.created} ta yangi, ${body.updated} ta yangilangan.`);
+
+  const wanted = args.only
+    ? PROVINCES.filter((p) => args.only.some((name) => p.name.toLowerCase().includes(name)))
+    : PROVINCES;
+  if (wanted.length === 0) {
+    console.error("--only bo'yicha hech qanday viloyat topilmadi");
+    process.exit(1);
+  }
+
+  // ---- 0-bosqich: davlat chegarasi (niqob uchun) ----
+  // Faqat to'liq import bo'lganda — --only bilan bir viloyat
+  // yuklanayotganda mamlakat konturini qayta yozish shart emas.
+  if (!args.only && !args.dryRun) {
+    console.log("0/2 — davlat chegarasi…");
+    try {
+      const data = await fetchOverpass(countryQuery());
+      const element = (data.elements ?? []).find((e) => e.type === "relation");
+      const built = element && toRegion(element, {
+        level: "davlat",
+        tolerance: args.toleranceViloyat,
+        name: "O‘zbekiston",
+      });
+      if (built) {
+        await post(args.api, args.token, [built.region], "Davlat");
+        console.log(`  O‘zbekiston  ${built.before} → ${built.after} nuqta`);
+      } else {
+        console.log("  ⚠ davlat chegarasi qurilmadi, niqobsiz davom etamiz");
+      }
+    } catch (error) {
+      console.log(`  ⚠ davlat chegarasi olinmadi: ${error.message}`);
+    }
+  }
+
+  // ---- 1-bosqich: viloyatlar ----
+  console.log(`1/2 — ${wanted.length} ta viloyat chegarasi so'ralmoqda…`);
+  const provinceData = await fetchOverpass(provinceQuery(wanted.map((p) => p.id)));
+  const provinceElements = (provinceData.elements ?? []).filter((e) => e.type === "relation");
+
+  const viloyatlar = [];
+  for (const province of wanted) {
+    const element = provinceElements.find((e) => e.id === province.id);
+    if (!element) {
+      console.log(`  ⚠ ${province.name}: OSM'dan kelmadi`);
+      continue;
+    }
+    // Rang raqami — ro'yxatdagi o'rin. Ro'yxat g'arbdan sharqqa
+    // tartiblangan, palitra esa qo'shni o'rinlarga eng farqli ranglarni
+    // beradi. Demak xaritada yonma-yon turgan viloyatlar o'xshamaydi.
+    const built = toRegion(element, {
+      level: "viloyat",
+      tolerance: args.toleranceViloyat,
+      colorIndex: province.colorIndex,
+      name: province.name,
+    });
+    if (!built) {
+      console.log(`  ⚠ ${province.name}: chegara halqasi yopilmadi`);
+      continue;
+    }
+    viloyatlar.push({ ...built, province, colorIndex: province.colorIndex });
+    console.log(`  ${built.region.name.padEnd(30)} ${String(built.before).padStart(5)} → ${String(built.after).padStart(4)} nuqta  · rang ${province.colorIndex + 1}`);
+  }
+
+  console.log(`\nViloyatlar tayyor: ${viloyatlar.length} ta`);
+
+  let provinceIdByOsm = new Map();
+  if (!args.dryRun) {
+    const result = await post(args.api, args.token, viloyatlar.map((v) => v.region), "Viloyatlar");
+    console.log(`Serverga yozildi: ${result.created} ta yangi, ${result.updated} ta yangilangan.`);
+    for (const region of result.regions ?? []) provinceIdByOsm.set(region.sourceId, region.id);
+  }
+
+  if (args.skipDistricts) {
+    console.log("--skip-districts: tumanlar o'tkazib yuborildi.");
+    return;
+  }
+
+  // ---- 2-bosqich: tumanlar, viloyat bo'yicha navbat bilan ----
+  // Bir so'rovda butun mamlakat tumanlarini so'rash Overpass'ni
+  // yiqitadi (504). Shuning uchun viloyatma-viloyat, orasida pauza bilan.
+  console.log(`\n2/2 — ${viloyatlar.length} ta viloyatning tumanlari…`);
+  const allDistricts = [];
+  let totalBefore = 0;
+  let totalAfter = 0;
+
+  for (const viloyat of viloyatlar) {
+    const parentId = provinceIdByOsm.get(viloyat.region.sourceId) ?? null;
+    if (!args.dryRun && !parentId) {
+      console.log(`  ⚠ ${viloyat.region.name}: viloyat identifikatori topilmadi, tumanlari o'tkazildi`);
+      continue;
+    }
+
+    let data;
+    try {
+      data = await fetchOverpass(districtQuery(viloyat.province.id));
+    } catch (error) {
+      console.log(`  ✖ ${viloyat.region.name}: ${error.message}`);
+      continue;
+    }
+
+    const districts = [];
+    for (const element of (data.elements ?? []).filter((e) => e.type === "relation")) {
+      const built = toRegion(element, {
+        level: "tuman",
+        tolerance: args.toleranceTuman,
+        parentId: parentId ?? "dry-run",
+        colorIndex: viloyat.colorIndex,
+      });
+      if (!built) continue;
+      districts.push(built.region);
+      totalBefore += built.before;
+      totalAfter += built.after;
+    }
+
+    console.log(`  ${viloyat.region.name.padEnd(30)} ${String(districts.length).padStart(3)} ta tuman`);
+    allDistricts.push(...districts);
+
+    if (!args.dryRun && districts.length > 0) {
+      const result = await post(args.api, args.token, districts, viloyat.region.name);
+      if (result.created + result.updated !== districts.length) {
+        console.log(`    ⚠ yozildi: ${result.created} yangi, ${result.updated} yangilangan`);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  console.log(`\nTumanlar: ${allDistricts.length} ta · nuqtalar ${totalBefore} → ${totalAfter}`);
+
+  if (args.out) {
+    const { writeFile } = await import("node:fs/promises");
+    const all = [...viloyatlar.map((v) => v.region), ...allDistricts];
+    await writeFile(args.out, `${JSON.stringify({
+      type: "FeatureCollection",
+      features: all.map((region) => ({
+        type: "Feature",
+        geometry: region.geometry,
+        properties: { name: region.name, level: region.level, colorIndex: region.colorIndex, sourceId: region.sourceId },
+      })),
+    })}\n`, "utf8");
+    console.log(`GeoJSON yozildi: ${args.out}`);
+  }
+
+  if (args.dryRun) console.log("\n--dry-run: serverga hech narsa yuborilmadi.");
 }
 
 main().catch((error) => {

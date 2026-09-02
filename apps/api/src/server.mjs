@@ -27,6 +27,7 @@ import {
   toFeatureCollection as regionsToFeatureCollection,
   toLabelFeatureCollection as regionsToLabelFeatureCollection,
 } from "../../../src/domain/regions.mjs";
+import { parseBbox } from "../../../src/domain/uzbekiston.mjs";
 import {
   JsonRegionRepository,
   RegionConflictError,
@@ -365,7 +366,19 @@ export function createKoprikServer({ repository, buildingRepository, regionRepos
           const requestedStatus = url.searchParams.get("status") ?? "published";
           const status = user?.role === "admin" ? requestedStatus : "published";
           const level = url.searchParams.get("level") ?? undefined;
-          const regions = await regionRepository.list(status, { level });
+          // bbox=g'arb,janub,sharq,shimol — xarita ko'rinayotgan hudud.
+          // Buzuq qiymat butun ro'yxatni qaytarish o'rniga xato beradi,
+          // aks holda mijoz sezmasdan 7 MB yuklab olishi mumkin.
+          const rawBbox = url.searchParams.get("bbox");
+          const bbox = rawBbox === null ? undefined : parseBbox(rawBbox);
+          if (rawBbox !== null && !bbox) {
+            return sendJson(response, 422, {
+              code: "REGION_BBOX_INVALID",
+              message: "bbox g‘arb,janub,sharq,shimol ko‘rinishida bo‘lishi kerak",
+            });
+          }
+          const limit = Number(url.searchParams.get("limit")) || undefined;
+          const regions = await regionRepository.list(status, { level, bbox, limit });
           return sendJson(response, 200, {
             regions,
             geojson: regionsToFeatureCollection(regions),

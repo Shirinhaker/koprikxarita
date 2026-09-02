@@ -5,8 +5,15 @@ window.KOPRIK_CONFIG = {
   esriTileUrl: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   esriAttribution: "Tasvir: &copy; Esri, Maxar, Earthstar Geographics va GIS jamoasi",
   esriOpacity: 0.35,
-  center: [67.27, 37.94],
-  zoom: 8,
+  // Xarita butun O'zbekistonni ko'rsatadi. Markaz — mamlakat chegara
+  // qutisining o'rtasi, zoom butun mamlakat ekranga sig'adigan daraja.
+  center: [64.6, 41.4],
+  zoom: 5.2,
+  // Undan uzoqlashib ketmaslik va qo'shni davlatlarga suzib chiqmaslik
+  // uchun chegara. maxBounds mamlakatdan biroz keng — chekka viloyatlar
+  // ekran chetiga tiqilib qolmasin.
+  maxBounds: [[54.5, 35.8], [74.6, 47.0]],
+  minZoom: 4.5,
   projectName: "Ko‘prik Xarita"
 };
 

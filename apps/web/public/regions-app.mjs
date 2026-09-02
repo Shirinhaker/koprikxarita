@@ -1,51 +1,79 @@
-// Hudud qatlami — tuman va mahalla chegaralari.
+// Hudud qatlami — davlat niqobi, viloyat va tuman chegaralari.
 //
 // buildings-app.mjs bilan bir xil naqsh: app.js undan initRegions() ni
 // chaqiradi va xarita obyektini beradi. Hech qanday global funksiya
 // almashtirilmaydi.
 //
-// Qatlam yo'l va bino ostiga qo'yiladi (beforeId) — chegara fon ma'lumoti,
-// u asosiy mazmunni bekitmasligi kerak.
+// Yuklash strategiyasi. Butun mamlakatning 206 ta tumani ~1.7 MB —
+// uni sahifa ochilishida yuklab bo'lmaydi. Shuning uchun:
+//   davlat  — bir marta, niqob uchun
+//   viloyat — bir marta (14 ta, qattiq soddalashtirilgan)
+//   tuman   — faqat TUMAN_ZOOM dan yaqinlashganda va faqat ko'rinayotgan
+//             hudud uchun (bbox parametri bilan)
+//
+// Qatlamlar yo'l va bino ostiga qo'yiladi (beforeId) — chegara fon
+// ma'lumoti, u asosiy mazmunni bekitmasligi kerak.
 
-import { createRegionLayers, REGION_LABEL_COLOR } from "./region-style.mjs";
+import { createMaskFeature, createMaskLayers, createRegionLayers } from "./region-style.mjs";
+import { provinceColor } from "./region-palette.mjs";
 
 const emptyFC = () => ({ type: "FeatureCollection", features: [] });
 
-const levelLabels = { tuman: "Tuman", mahalla: "Mahalla" };
+// Shu zoomdan boshlab tumanlar yuklanadi. Undan uzoqda viloyat yetarli
+// va tuman chizig'i baribir ko'rinmaydi (region-style.mjs da eni 0).
+const TUMAN_ZOOM = 8;
+
+// Xarita surilgandan keyin shuncha kutiladi — har piksel siljishda
+// so'rov yubormaslik uchun.
+const MOVE_DEBOUNCE_MS = 350;
+
+const levelLabels = { davlat: "Davlat", viloyat: "Viloyat", tuman: "Tuman", mahalla: "Mahalla" };
 
 export function initRegions(map, ctx) {
-  const { maplibre, api, toast, beforeId } = ctx;
+  const { maplibre, api, beforeId } = ctx;
   const dom = collectDom();
 
-  let regions = [];
+  let viloyatlar = [];
+  let tumanlar = [];
   let labelMarkers = [];
+  let popup = null;
   let visible = true;
+  let moveTimer = null;
+  let lastTumanKey = "";
+  let loadToken = 0;
 
-  // ---- Xarita qatlamlari ----
+  // ---- Qatlamlar ----
+  // Tartib: niqob eng pastda (fon xaritasi ustida), keyin hududlar.
+  map.addSource("country-mask-source", { type: "geojson", data: emptyFC() });
+  addBelow(createMaskLayers());
+
   map.addSource("regions-source", { type: "geojson", data: emptyFC() });
-  for (const layer of createRegionLayers()) {
-    // beforeId berilgan bo'lsa, hudud qatlami yo'llar ostiga tushadi.
-    if (beforeId && map.getLayer(beforeId)) map.addLayer(layer, beforeId);
-    else map.addLayer(layer);
+  addBelow(createRegionLayers());
+
+  function addBelow(layers) {
+    for (const layer of layers) {
+      if (beforeId && map.getLayer(beforeId)) map.addLayer(layer, beforeId);
+      else map.addLayer(layer);
+    }
   }
 
+  // ---- Bosish ----
   map.on("click", "regions-fill", (event) => {
     if (!visible || window.__buildingDrawing) return;
     const properties = event.features?.[0]?.properties;
     if (!properties) return;
-    // Yo'l yoki bino tanlangan bo'lsa, ular ustun — hudud faqat bo'sh
-    // joyga bosilganda javob beradi.
+    // Yo'l va bino ustun — ular bosilganda hudud javob bermaydi.
     const above = map.queryRenderedFeatures(event.point, {
       layers: ["roads-fill", "buildings-fill"].filter((id) => map.getLayer(id)),
     });
     if (above.length > 0) return;
-    showRegionPopup(properties, event.lngLat);
+    showPopup(properties, event.lngLat);
   });
 
-  let popup = null;
-  function showRegionPopup(properties, lngLat) {
+  function showPopup(properties, lngLat) {
     popup?.remove();
-    const parent = regions.find((region) => region.id === properties.parentId);
+    const parent = viloyatlar.find((region) => region.id === properties.parentId);
+    const color = provinceColor(Number(properties.colorIndex));
     const lines = [
       `<strong>${escapeHtml(properties.name)}</strong>`,
       `<span>${levelLabels[properties.level] ?? properties.level}</span>`,
@@ -53,74 +81,150 @@ export function initRegions(map, ctx) {
     if (parent) lines.push(`<span>${escapeHtml(parent.name)} tarkibida</span>`);
     popup = new maplibre.Popup({ closeButton: true, className: "region-popup" })
       .setLngLat(lngLat)
-      .setHTML(`<div class="region-popup-body">${lines.join("")}</div>`)
+      .setHTML(`<div class="region-popup-body" style="border-left:3px solid ${color};padding-left:8px">${lines.join("")}</div>`)
       .addTo(map);
   }
 
   // ---- Nomlar ----
   // MapLibre symbol qatlami o'rniga HTML belgi: xarita uslubida glyphs
-  // manzili yo'q. 14 ta tuman uchun bu yengil; mahalla qo'shilganda
-  // faqat ko'rinayotgan hududdagilar chiziladi.
+  // manzili yo'q. Faqat hozir kerak bo'ladigan darajaning nomlari
+  // chiziladi, aks holda yaqinlashganda yuzlab belgi paydo bo'lardi.
   function renderLabels() {
     for (const marker of labelMarkers) marker.remove();
     labelMarkers = [];
     if (!visible) return;
 
-    for (const region of regions) {
+    const zoom = map.getZoom();
+    const shown = zoom >= TUMAN_ZOOM + 1 ? tumanlar : viloyatlar;
+    for (const region of shown) {
+      if (!region.labelPoint) continue;
       const element = document.createElement("span");
       element.className = `region-label region-label-${region.level}`;
       element.textContent = region.name;
-      element.style.color = REGION_LABEL_COLOR;
-      const marker = new maplibre.Marker({ element, anchor: "center" })
-        .setLngLat(region.labelPoint)
-        .addTo(map);
-      labelMarkers.push(marker);
+      element.style.color = provinceColor(region.colorIndex);
+      labelMarkers.push(
+        new maplibre.Marker({ element, anchor: "center" }).setLngLat(region.labelPoint).addTo(map),
+      );
     }
   }
 
   function setVisible(next) {
     visible = next;
-    for (const id of ["regions-fill", "regions-line"]) {
+    const layers = ["country-mask-fill", "country-mask-line", "regions-fill", "regions-line"];
+    for (const id of layers) {
       if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", next ? "visible" : "none");
     }
     renderLabels();
     if (!next) popup?.remove();
   }
 
-  async function load() {
+  // ---- Ma'lumot ----
+  function withLabels(result) {
+    return (result.regions ?? []).map((region, index) => ({
+      ...region,
+      labelPoint: result.labels?.features?.[index]?.geometry?.coordinates ?? null,
+    }));
+  }
+
+  function paintRegions() {
+    const features = [...viloyatlar, ...tumanlar].map((region) => ({
+      type: "Feature",
+      id: region.id,
+      geometry: region.geometry,
+      properties: {
+        id: region.id,
+        name: region.name,
+        level: region.level,
+        parentId: region.parentId,
+        colorIndex: region.colorIndex ?? -1,
+      },
+    }));
+    map.getSource("regions-source")?.setData({ type: "FeatureCollection", features });
+    renderLabels();
+    updateCount();
+  }
+
+  async function loadMask() {
     try {
-      const result = await api("/regions");
-      regions = (result.regions ?? []).map((region, index) => ({
-        ...region,
-        labelPoint: result.labels?.features?.[index]?.geometry?.coordinates
-          ?? fallbackLabelPoint(result.geojson, region.id),
-      }));
-      map.getSource("regions-source")?.setData(result.geojson ?? emptyFC());
-      renderLabels();
-      updateCount();
+      const result = await api("/regions?level=davlat");
+      const country = result.geojson?.features?.[0]?.geometry ?? null;
+      map.getSource("country-mask-source")?.setData({
+        type: "FeatureCollection",
+        features: [createMaskFeature(country)],
+      });
     } catch (error) {
-      // Hudud qatlami yo'q bo'lsa xarita baribir ishlashi kerak —
-      // shuning uchun bu xato butun sahifani to'xtatmaydi.
-      console.error("Hududlarni yuklashda xato:", error);
+      // Niqob bo'lmasa xarita baribir ishlaydi — shunchaki qo'shni
+      // davlatlar ham ko'rinib turadi.
+      console.error("Mamlakat niqobi yuklanmadi:", error);
+    }
+  }
+
+  async function loadViloyatlar() {
+    try {
+      const result = await api("/regions?level=viloyat");
+      viloyatlar = withLabels(result);
+      paintRegions();
+    } catch (error) {
+      console.error("Viloyatlarni yuklashda xato:", error);
       if (dom.count) dom.count.textContent = "yuklanmadi";
     }
   }
 
+  async function loadTumanlar() {
+    if (map.getZoom() < TUMAN_ZOOM) {
+      if (tumanlar.length > 0) { tumanlar = []; paintRegions(); }
+      return;
+    }
+    const bounds = map.getBounds();
+    const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
+      .map((value) => Number(value.toFixed(3)));
+    const key = bbox.join(",");
+    if (key === lastTumanKey) return;
+    lastTumanKey = key;
+
+    const token = ++loadToken;
+    try {
+      const result = await api(`/regions?level=tuman&bbox=${encodeURIComponent(key)}`);
+      // Sekin javob yangiroq so'rovni bosib ketmasligi kerak.
+      if (token !== loadToken) return;
+      tumanlar = withLabels(result);
+      paintRegions();
+    } catch (error) {
+      console.error("Tumanlarni yuklashda xato:", error);
+    }
+  }
+
+  function onMove() {
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => {
+      if (visible) loadTumanlar();
+      renderLabels();
+    }, MOVE_DEBOUNCE_MS);
+  }
+
   function updateCount() {
     if (!dom.count) return;
-    const tumanCount = regions.filter((region) => region.level === "tuman").length;
-    const mahallaCount = regions.filter((region) => region.level === "mahalla").length;
-    dom.count.textContent = mahallaCount > 0
-      ? `${tumanCount} tuman · ${mahallaCount} mahalla`
-      : `${tumanCount} tuman`;
+    const zoom = map.getZoom();
+    dom.count.textContent = zoom < TUMAN_ZOOM
+      ? `${viloyatlar.length} viloyat`
+      : `${viloyatlar.length} viloyat · ${tumanlar.length} tuman`;
   }
+
+  map.on("moveend", onMove);
+  map.on("zoomend", onMove);
 
   dom.toggle?.addEventListener("change", () => setVisible(dom.toggle.checked));
   if (dom.toggle) setVisible(dom.toggle.checked);
 
+  async function load() {
+    await Promise.all([loadMask(), loadViloyatlar()]);
+    lastTumanKey = "";
+    await loadTumanlar();
+  }
+
   load();
 
-  return { reload: load, setVisible, getRegions: () => regions };
+  return { reload: load, setVisible, getRegions: () => [...viloyatlar, ...tumanlar] };
 }
 
 function collectDom() {
@@ -129,17 +233,6 @@ function collectDom() {
     toggle: $("#regionsToggle"),
     count: $("#regionsCount"),
   };
-}
-
-function fallbackLabelPoint(geojson, id) {
-  const feature = geojson?.features?.find((item) => item.properties?.id === id);
-  const rings = feature?.geometry?.type === "MultiPolygon"
-    ? feature.geometry.coordinates[0]
-    : feature?.geometry?.coordinates;
-  const ring = rings?.[0] ?? [[0, 0]];
-  const points = ring.length > 1 ? ring.slice(0, -1) : ring;
-  const sum = points.reduce((acc, [lng, lat]) => [acc[0] + lng, acc[1] + lat], [0, 0]);
-  return [sum[0] / points.length, sum[1] / points.length];
 }
 
 function escapeHtml(value) {
