@@ -244,3 +244,4 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .regions-section .helper-text { margin-top: 6px; }
 .region-label-viloyat { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; opacity: .9; }
 .region-label-davlat { display: none; }
+.map-fab.active { background: var(--primary); border-color: var(--primary); color: #fff; }

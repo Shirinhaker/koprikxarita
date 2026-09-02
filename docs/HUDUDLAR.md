@@ -66,13 +66,18 @@ Tekshiruv natijasi:
 
 ```
 palitraning o'zi (dataviz validator, qo'shni juftliklar):
-  rang ko'rmaslik (protanopiya)   ΔE 11.4   talab: >= 8
-  oddiy ko'rish                   ΔE 20.4   talab: >= 15
+  rang ko'rmaslik (protanopiya)   ΔE 12.0   talab: >= 8
+  oddiy ko'rish                   ΔE 21.0   talab: >= 15
 
 xaritadagi haqiqiy chegaradosh viloyatlar:
-  eng yaqin rang                  ΔE 23.7   talab: >= 15
+  eng yaqin rang                  ΔE 22.4   talab: >= 15
   (optimallashtirishdan oldin: 10.4)
 ```
+
+Ranglar 2026-09-02 da foydalanuvchi so'roviga ko'ra ochroq qilindi
+(OKLCH yorqinligi 0.50/0.68 -> 0.56/0.74). Yangi palitra ham
+tekshiruvdan o'tkazildi: ko'rsatkichlar yuqoridagicha, ya'ni ochroq
+bo'lgani bilan ajratib bo'lish yomonlashmadi.
 
 **Viloyat qo'shilsa yoki chegara o'zgarsa** bu raqamlarni qayta hisoblash
 kerak: viloyatlarni yuklab, har juftlik uchun chegaradoshlikni aniqlab

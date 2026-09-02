@@ -4,9 +4,11 @@ import { createSavedRoadLayers, createDraftRoadLayers } from "./road-style.mjs";
 import { snapCoordinateToRoads } from "./road-snap.mjs";
 import { initBuildings } from "./buildings-app.mjs";
 import { initRegions } from "./regions-app.mjs";
+import { initView3d } from "./view-3d.mjs";
 
 let buildingsController = null;
 let regionsController = null;
+let view3dController = null;
 
 const config = window.KOPRIK_CONFIG ?? {
   apiBase: "/api",
@@ -264,7 +266,9 @@ async function initializeMap() {
     ...(config.minZoom ? { minZoom: config.minZoom } : {}),
     attributionControl: false,
     maplibreLogo: false,
-    maxPitch: 0,
+    // 3D ko'rinish uchun qiyalikka ruxsat. 60 dan ortig'ida raster fon
+    // ufqda cho'zilib, tanib bo'lmas holga keladi.
+    maxPitch: 60,
   });
   map.addControl(
     new window.maplibregl.AttributionControl({ compact: false }),
@@ -294,6 +298,12 @@ async function initializeMap() {
       });
     } catch (error) {
       console.error("Binolar qatlamini ulashda xato:", error);
+    }
+    try {
+      // Binolardan keyin: ekstruziya qatlami bino manbasiga ulanadi.
+      view3dController = initView3d(map, { toast });
+    } catch (error) {
+      console.error("3D ko‘rinishni ulashda xato:", error);
     }
     dom.mapLoading.classList.add("loaded");
   });
