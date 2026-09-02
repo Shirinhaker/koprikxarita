@@ -26,11 +26,23 @@
 // Mahalla bu skriptda yo'q: OSM'da Surxondaryo bo'yicha atigi 3 ta bor,
 // shuning uchun mahalla qo'lda chiziladi.
 
+// Overpass oynalari. Tartib muhim: birinchisi ishlasa qolganiga
+// umuman murojaat qilinmaydi.
+//
+// maps.mail.ru birinchi turibdi — O'zbekistondan overpass-api.de va
+// overpass.kumi.systems ulanish darajasida ochilmasligi kuzatilgan
+// (HTTP xatosi emas, umuman ulanmaydi). Ular ro'yxatda zaxira
+// sifatida qoldi: boshqa tarmoqdan ishlatilsa asqotadi.
 const OVERPASS_ENDPOINTS = [
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
-  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
+
+// Ulanmaydigan oyna bir marta aniqlanadi va shu ishga tushirish
+// davomida boshqa urinilmaydi. Aks holda har so'rovda o'lik manzilga
+// ikki daqiqa sarflanardi — 15 ta so'rovda yarim soat.
+const deadEndpoints = new Set();
 
 // O'zbekiston davlat chegarasi — xaritada qo'shni davlatlarni yopadigan
 // niqob shundan quriladi.
@@ -117,18 +129,34 @@ out geom;`;
 // Shuning uchun bir nechta oyna sinaladi va kutish vaqti oshirib boriladi.
 async function fetchOverpass(query) {
   let lastError;
-  for (const endpoint of OVERPASS_ENDPOINTS) {
+  const live = OVERPASS_ENDPOINTS.filter((endpoint) => !deadEndpoints.has(endpoint));
+  if (live.length === 0) {
+    throw new Error("Overpass oynalarining hech biri ulanmadi. Tarmoqni tekshiring.");
+  }
+
+  for (const endpoint of live) {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
         const response = await fetch(endpoint, { method: "POST", body: query });
         const text = await response.text();
         if (!response.ok || text.trimStart().startsWith("<")) {
           const limited = /rate_limited|too many requests/i.test(text);
-          throw new Error(limited ? "Overpass so'rovni cheklab qo'ydi" : `Overpass HTTP ${response.status}`);
+          const error = new Error(limited ? "Overpass so'rovni cheklab qo'ydi" : `Overpass HTTP ${response.status}`);
+          error.serverReplied = true;
+          throw error;
         }
         return JSON.parse(text);
       } catch (error) {
         lastError = error;
+
+        // Ulanishning o'zi bo'lmasa — bu vaqtinchalik bandlik emas,
+        // manzil shu tarmoqdan ochilmaydi. Qayta urinish behuda.
+        if (!error.serverReplied) {
+          deadEndpoints.add(endpoint);
+          console.log(`  ${endpoint} — ulanmadi, bu oyna o'tkazib yuborildi`);
+          break;
+        }
+
         const wait = attempt * 8000;
         console.log(`  ${endpoint} — ${error.message}. ${wait / 1000}s kutib qayta urinaman…`);
         await new Promise((resolve) => setTimeout(resolve, wait));
