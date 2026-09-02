@@ -8,7 +8,7 @@
     <meta name="description" content="Surxondaryo uchun tahrirlanadigan mustaqil xarita xizmati" />
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
-    <link rel="stylesheet" href="/styles.css?build=0009" />
+    <link rel="stylesheet" href="/styles.css?build=0010" />
   </head>
   <body>
     <div class="app-shell">
@@ -265,8 +265,11 @@
             <p>Xarita yuklanmoqda…</p>
           </div>
           <div class="map-top-tools">
-            <button id="centerMapButton" class="map-fab" type="button" title="Surxondaryoga qaytish" aria-label="Surxondaryoga qaytish">
+            <button id="centerMapButton" class="map-fab" type="button" title="Butun O‘zbekistonni ko‘rish" aria-label="Butun O‘zbekistonni ko‘rish">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg>
+            </button>
+            <button id="view3dButton" class="map-fab" type="button" title="3D ko‘rinish" aria-label="3D ko‘rinish" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 8v8l9 5 9-5V8l-9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
             </button>
           </div>
           <button id="attributionButton" class="attribution-button" type="button">ⓘ Xarita ma’lumoti</button>
@@ -306,7 +309,7 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite"></div>
 
-    <script src="/config.js?build=0009"></script>
-    <script type="module" src="/app.js?build=0009"></script>
+    <script src="/config.js?build=0010"></script>
+    <script type="module" src="/app.js?build=0010"></script>
   </body>
 </html>
