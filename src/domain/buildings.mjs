@@ -1,3 +1,4 @@
+import { isPositionInside } from "./surxondaryo.mjs";
 // Bino domeni — yo‘llar (roads.mjs) uslubida, lekin Polygon geometriya uchun.
 // Qo‘shimcha: manba (source) va tekshirilgan (verified) maydonlari —
 // Microsoft / OSM / qo‘lda chizilgan binolarni ajratish va tekshiruv oqimi uchun.
@@ -208,10 +209,7 @@ export function canPublishBuilding(building) {
 }
 
 export function isInsideSurxondaryo(geometry) {
-  const bounds = { west: 66.1, south: 36.9, east: 68.7, north: 38.7 };
-  return geometry.coordinates.every((ring) => ring.every(([lng, lat]) => (
-    lng >= bounds.west && lng <= bounds.east && lat >= bounds.south && lat <= bounds.north
-  )));
+  return geometry.coordinates.every((ring) => ring.every((position) => isPositionInside(position)));
 }
 
 export function toFeatureCollection(buildings) {

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.env
+
+# Jonli ma'lumotlar — kod emas, server o'zi yaratadi.
+# data/roads.json va data/road-change-log.json tarixda allaqachon
+# kuzatilgan, shuning uchun ular bu yerda sanab o'tilmagan.
+data/regions.json
+data/region-change-log.json
+data/buildings.json
+data/building-change-log.json
+data/building-shards/

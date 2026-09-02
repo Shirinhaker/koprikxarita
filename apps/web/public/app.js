@@ -3,8 +3,10 @@ import { createOsmRasterStyle } from "./map-style.mjs";
 import { createSavedRoadLayers, createDraftRoadLayers } from "./road-style.mjs";
 import { snapCoordinateToRoads } from "./road-snap.mjs";
 import { initBuildings } from "./buildings-app.mjs";
+import { initRegions } from "./regions-app.mjs";
 
 let buildingsController = null;
+let regionsController = null;
 
 const config = window.KOPRIK_CONFIG ?? {
   apiBase: "/api",
@@ -113,6 +115,7 @@ function renderAuth() {
   if (!isAdmin() && mode !== "idle") cancelEditing();
   reloadRoads();
   buildingsController?.reload();
+  regionsController?.reload();
 }
 
 function loginDialogOpen() {
@@ -264,6 +267,17 @@ async function initializeMap() {
   map.on("load", () => {
     mapReady = true;
     setupMapLayers();
+    try {
+      // Hudud chegaralari yo'llar ostiga qo'yiladi — fon ma'lumoti sifatida.
+      regionsController = initRegions(map, {
+        maplibre: window.maplibregl,
+        api,
+        toast,
+        beforeId: "roads-casing",
+      });
+    } catch (error) {
+      console.error("Hudud qatlamini ulashda xato:", error);
+    }
     try {
       buildingsController = initBuildings(map, {
         config,
