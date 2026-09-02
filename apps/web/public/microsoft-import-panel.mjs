@@ -84,9 +84,16 @@ async function boot() {
         : "Microsoft binolarini yuklash";
 
       if (lastState === "running" && status.state === "completed") {
+        // Yangi import qilingan binolar draft holatida bo'ladi, shuning uchun
+        // filtrni "Barchasi"ga o'tkazamiz. Sahifani qayta yuklamaymiz —
+        // qayta yuklash filtrni standart holatiga qaytarib, yangi binolarni
+        // yana yashirib qo'yardi. change hodisasi qatlamni o'zi yangilaydi.
         const filter = document.querySelector("#buildingStatusFilter");
-        if (filter) filter.value = "all";
-        window.location.reload();
+        if (filter) {
+          filter.value = "all";
+          filter.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        lastState = status.state;
         return;
       }
       lastState = status.state;
