@@ -1,4 +1,4 @@
-import { SURXONDARYO_BOUNDS } from "./surxondaryo.mjs";
+import { UZBEKISTAN_BOUNDS } from "./uzbekiston.mjs";
 
 // Hudud domeni — tuman va mahalla chegaralari.
 //
@@ -11,11 +11,18 @@ import { SURXONDARYO_BOUNDS } from "./surxondaryo.mjs";
 // Mahalla hozircha OSM'da yo‘q (Surxondaryo bo‘yicha atigi 3 ta),
 // shuning uchun u qo‘lda chiziladi. Tuzilma ikkalasini ham qo‘llaydi.
 
-export const REGION_LEVELS = ["tuman", "mahalla"];
+// Daraja ierarxiyasi: davlat -> viloyat -> tuman -> mahalla.
+// Tartib muhim: findRegionAtPoint aniqroq (pastroq) darajani ustun qo'yadi.
+export const REGION_LEVELS = ["davlat", "viloyat", "tuman", "mahalla"];
+
+// Har daraja kimga tegishli bo'lishi kerak. null — yuqori hudud shart emas.
+// Viloyat uchun ham null: davlat bitta, uni har viloyatga biriktirib
+// o'tirish import tartibini bekorga murakkablashtiradi.
+const PARENT_LEVEL = { davlat: null, viloyat: null, tuman: "viloyat", mahalla: "tuman" };
 export const REGION_STATUSES = ["draft", "published", "archived"];
 export const REGION_SOURCES = ["osm", "manual", "other"];
 
-export const REGION_MAX_VERTICES = 60_000;
+export const REGION_MAX_VERTICES = 120_000;
 
 export class RegionValidationError extends Error {
   constructor(code, message, details = undefined) {
@@ -25,6 +32,8 @@ export class RegionValidationError extends Error {
     this.details = details;
   }
 }
+
+export const LEVEL_LABELS = { davlat: "Davlat", viloyat: "Viloyat", tuman: "Tuman", mahalla: "Mahalla" };
 
 function requireEnum(value, allowed, field, label) {
   if (!allowed.includes(value)) {
@@ -45,6 +54,15 @@ function requireText(value, field, maxLength, { required = false } = {}) {
     throw new RegionValidationError("REGION_FIELD_TOO_LONG", `${field} juda uzun`, { field, maxLength });
   }
   return text;
+}
+
+function optionalColorIndex(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const index = Number(value);
+  if (!Number.isInteger(index) || index < 0 || index > 63) {
+    throw new RegionValidationError("REGION_COLOR_INVALID", "Rang raqami 0–63 oralig‘ida butun son bo‘lishi kerak", { field: "colorIndex" });
+  }
+  return index;
 }
 
 function optionalId(value, field) {
@@ -131,17 +149,29 @@ export function validateRegionInput(input) {
     code: requireText(input.code ?? "", "Kod", 60),
     source: requireEnum(input.source ?? "manual", REGION_SOURCES, "source", "Manba"),
     sourceId: optionalId(input.sourceId, "Manba identifikatori"),
+    // Rang viloyatga biriktiriladi; tuman va mahalla o'z viloyatining
+    // rangini meros qilib oladi, shuning uchun bu maydon har darajada bor.
+    colorIndex: optionalColorIndex(input.colorIndex),
     status: requireEnum(input.status ?? "draft", REGION_STATUSES, "status", "Holat"),
     geometry: validateRegionGeometry(input.geometry),
   };
 
-  // Mahalla har doim biror tumanga tegishli bo‘lishi kerak — aks holda
-  // qidiruv va hisobotlarda "egasiz" qolib ketadi.
-  if (level === "mahalla" && !result.parentId) {
-    throw new RegionValidationError("REGION_PARENT_REQUIRED", "Mahalla qaysi tumanga tegishli ekani ko‘rsatilishi kerak", { field: "parentId" });
+  // Har daraja o'z o'rnida turishi kerak: tuman viloyatsiz, mahalla
+  // tumansiz "egasiz" qolib ketadi va qidiruvda topilmaydi.
+  const parentLevel = PARENT_LEVEL[level];
+  if (parentLevel && !result.parentId) {
+    throw new RegionValidationError(
+      "REGION_PARENT_REQUIRED",
+      `${LEVEL_LABELS[level]} qaysi ${LEVEL_LABELS[parentLevel].toLowerCase()}ga tegishli ekani ko‘rsatilishi kerak`,
+      { field: "parentId", parentLevel },
+    );
   }
-  if (level === "tuman" && result.parentId) {
-    throw new RegionValidationError("REGION_PARENT_INVALID", "Tuman uchun yuqori hudud ko‘rsatilmaydi", { field: "parentId" });
+  if (!parentLevel && result.parentId) {
+    throw new RegionValidationError(
+      "REGION_PARENT_INVALID",
+      `${LEVEL_LABELS[level]} uchun yuqori hudud ko‘rsatilmaydi`,
+      { field: "parentId" },
+    );
   }
 
   if (input.expectedUpdatedAt !== undefined) {
@@ -209,7 +239,7 @@ export function findRegionAtPoint(point, regions) {
 }
 
 export function isInsideSurxondaryo(geometry) {
-  const limits = SURXONDARYO_BOUNDS;
+  const limits = UZBEKISTAN_BOUNDS;
   const bounds = regionBounds(geometry);
   return bounds.west >= limits.west && bounds.east <= limits.east
     && bounds.south >= limits.south && bounds.north <= limits.north;
@@ -228,6 +258,7 @@ export function toFeatureCollection(regions) {
         level: region.level,
         parentId: region.parentId,
         code: region.code,
+        colorIndex: region.colorIndex,
         source: region.source,
         status: region.status,
         createdAt: region.createdAt,
@@ -268,7 +299,12 @@ export function toLabelFeatureCollection(regions) {
       type: "Feature",
       id: `${region.id}-label`,
       geometry: { type: "Point", coordinates: regionLabelPoint(region.geometry) },
-      properties: { id: region.id, name: region.name, level: region.level },
+      properties: {
+        id: region.id,
+        name: region.name,
+        level: region.level,
+        colorIndex: region.colorIndex,
+      },
     })),
   };
 }

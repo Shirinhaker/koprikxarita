@@ -61,9 +61,19 @@ const square = (west, south, size = 0.1) => ({
   ]],
 });
 
-const tuman = (name = "Denov", geometry = square(67.2, 37.9)) => ({
+const viloyat = (name = "Surxondaryo", geometry = square(66.9, 37.3, 1.5)) => ({
+  name,
+  level: "viloyat",
+  source: "osm",
+  sourceId: `relation/v-${name}`,
+  colorIndex: 5,
+  geometry,
+});
+
+const tuman = (name = "Denov", geometry = square(67.2, 37.9), parentId = "viloyat-1") => ({
   name,
   level: "tuman",
+  parentId,
   source: "osm",
   sourceId: `relation/${name}`,
   geometry,
@@ -94,20 +104,24 @@ test("import qilingan tumanlar hammaga ko‘rinadi", async () => {
     const imported = await fetch(`${baseUrl}/api/regions/import`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ regions: [tuman("Denov"), tuman("Boysun", square(67.5, 38.1))] }),
+      body: JSON.stringify({ regions: [viloyat(), tuman("Denov"), tuman("Boysun", square(67.5, 38.1))] }),
     });
     assert.equal(imported.status, 201);
     const importBody = await imported.json();
-    assert.equal(importBody.created, 2);
+    assert.equal(importBody.created, 3);
     // Javob yengil bo‘lishi kerak — geometriya qaytarilmaydi.
     assert.equal(importBody.regions[0].geometry, undefined);
 
     const anonymous = await fetch(`${baseUrl}/api/regions`);
     assert.equal(anonymous.status, 200);
     const body = await anonymous.json();
-    assert.equal(body.regions.length, 2);
-    assert.equal(body.geojson.features.length, 2);
-    assert.equal(body.labels.features.length, 2);
+    assert.equal(body.regions.length, 3);
+    assert.equal(body.geojson.features.length, 3);
+    assert.equal(body.labels.features.length, 3);
+    // Rang raqami GeoJSON xossalariga ham tushishi kerak — xarita shunga
+    // qarab viloyat rangini tanlaydi.
+    const viloyatFeature = body.geojson.features.find((f) => f.properties.level === "viloyat");
+    assert.equal(viloyatFeature.properties.colorIndex, 5);
     assert.equal(body.labels.features[0].geometry.type, "Point");
   });
 });
@@ -158,9 +172,15 @@ test("daraja bo‘yicha filtr API darajasida ishlaydi", async () => {
     await fetch(`${baseUrl}/api/regions/import`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ regions: [tuman("Denov")] }),
+      body: JSON.stringify({ regions: [viloyat()] }),
     });
-    const [parent] = await regionRepository.list("published");
+    const [parentViloyat] = await regionRepository.list("published", { level: "viloyat" });
+    await fetch(`${baseUrl}/api/regions/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ regions: [tuman("Denov", square(67.2, 37.9), parentViloyat.id)] }),
+    });
+    const [parent] = await regionRepository.list("published", { level: "tuman" });
     await fetch(`${baseUrl}/api/regions/import`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
@@ -247,4 +267,80 @@ test("regionRepository ulanmagan bo‘lsa API 404 beradi, server yiqilmaydi", as
     await once(server, "close");
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+// ---- bbox bo'yicha yuklash ----
+// 206 ta tumanning to'liq geometriyasi ~1.7 MB. Sahifa ochilishida uni
+// yuklamaslik uchun tuman qatlami faqat ko'rinayotgan hudud uchun
+// so'raladi. Bu __viewport__ kabi yashirin matn emas, haqiqiy parametr.
+
+test("bbox faqat kesishadigan hududlarni qaytaradi", async () => {
+  await withApi(async ({ baseUrl }) => {
+    const token = await login(baseUrl, "admin", "admin123");
+    await fetch(`${baseUrl}/api/regions/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        regions: [
+          viloyat("Surxondaryo", square(67.0, 37.5, 1)),
+          viloyat("Xorazm", square(60.0, 41.0, 1)),
+        ],
+      }),
+    });
+
+    const hammasi = await (await fetch(`${baseUrl}/api/regions`)).json();
+    assert.equal(hammasi.regions.length, 2);
+
+    const janub = await (await fetch(`${baseUrl}/api/regions?bbox=66.8,37.4,68.2,38.6`)).json();
+    assert.equal(janub.regions.length, 1);
+    assert.equal(janub.regions[0].name, "Surxondaryo");
+
+    const uzoq = await (await fetch(`${baseUrl}/api/regions?bbox=70.0,44.0,71.0,45.0`)).json();
+    assert.equal(uzoq.regions.length, 0);
+  });
+});
+
+test("buzuq bbox jimgina hamma narsani qaytarmaydi, xato beradi", async () => {
+  await withApi(async ({ baseUrl }) => {
+    for (const bad of ["salom", "1,2,3", "68,37,66,38"]) {
+      const response = await fetch(`${baseUrl}/api/regions?bbox=${encodeURIComponent(bad)}`);
+      assert.equal(response.status, 422, `bbox=${bad}`);
+      assert.equal((await response.json()).code, "REGION_BBOX_INVALID");
+    }
+  });
+});
+
+test("limit qaytariladigan hudud sonini cheklaydi", async () => {
+  await withApi(async ({ baseUrl }) => {
+    const token = await login(baseUrl, "admin", "admin123");
+    await fetch(`${baseUrl}/api/regions/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        regions: [viloyat("A", square(66, 37, 1)), viloyat("B", square(68, 39, 1)), viloyat("C", square(70, 41, 1))],
+      }),
+    });
+    const body = await (await fetch(`${baseUrl}/api/regions?limit=2`)).json();
+    assert.equal(body.regions.length, 2);
+  });
+});
+
+test("davlat darajasi niqob uchun alohida so‘raladi", async () => {
+  await withApi(async ({ baseUrl }) => {
+    const token = await login(baseUrl, "admin", "admin123");
+    await fetch(`${baseUrl}/api/regions/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        regions: [
+          { name: "O‘zbekiston", level: "davlat", source: "osm", sourceId: "relation/196240", geometry: square(56, 37, 17) },
+          viloyat(),
+        ],
+      }),
+    });
+    const davlat = await (await fetch(`${baseUrl}/api/regions?level=davlat`)).json();
+    assert.equal(davlat.regions.length, 1);
+    assert.equal(davlat.regions[0].name, "O‘zbekiston");
+    assert.equal(davlat.regions[0].parentId, null, "davlat yuqori hududsiz");
+  });
 });

@@ -1,4 +1,4 @@
-import { isPositionInside } from "./surxondaryo.mjs";
+import { isPositionInside } from "./uzbekiston.mjs";
 export const ROAD_TYPES = ["residential", "service", "pedestrian", "track", "other"];
 export const ROAD_SURFACES = ["asphalt", "concrete", "gravel", "ground", "unknown"];
 export const ROAD_DIRECTIONS = ["two_way", "one_way"];

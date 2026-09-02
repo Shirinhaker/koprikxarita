@@ -102,9 +102,11 @@ test("maydon hisoblash taxminan to‘g‘ri (~500 m2)", () => {
   assert.ok(area > 300 && area < 700, `area=${area}`);
 });
 
-test("Surxondaryo chegarasi tekshiruvi ishlaydi", () => {
-  assert.equal(isInsideSurxondaryo(squareAround(67.28, 37.22)), true);
-  assert.equal(isInsideSurxondaryo(squareAround(69.24, 41.31)), false); // Toshkent
+test("O‘zbekiston chegarasi tekshiruvi ishlaydi", () => {
+  assert.equal(isInsideSurxondaryo(squareAround(67.28, 37.22)), true, "Termiz");
+  // Xarita butun mamlakatni qamragandan keyin Toshkent ham ichkarida.
+  assert.equal(isInsideSurxondaryo(squareAround(69.24, 41.31)), true, "Toshkent");
+  assert.equal(isInsideSurxondaryo(squareAround(37.62, 55.75)), false, "Moskva");
 });
 
 test("FeatureCollection manba va tekshiruv maydonlarini saqlaydi", () => {
